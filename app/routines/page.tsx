@@ -46,7 +46,7 @@ export default function Routines() {
       setExercises(e || [])
 
       const grouped: Record<string, RoutineExerciseRow[]> = {}
-      ;(re || []).forEach((item: RoutineExerciseRow) => {
+      ;((re || []) as unknown as RoutineExerciseRow[]).forEach((item) => {
         if (!grouped[item.routine_id]) grouped[item.routine_id] = []
         grouped[item.routine_id].push(item)
       })
@@ -120,7 +120,7 @@ export default function Routines() {
     if (data) {
       setRoutineExercises((prev) => ({
         ...prev,
-        [routineId]: [...(prev[routineId] || []), data as RoutineExerciseRow],
+        [routineId]: [...(prev[routineId] || []), data as unknown as RoutineExerciseRow],
       }))
       setAddForm({ exerciseId: '', sets: '3', reps: '' })
     }

@@ -43,7 +43,7 @@ export default function Progress() {
         // Aggregate per date: max weight and total volume
         const byDate: Record<string, { maxWeight: number; totalVolume: number }> = {}
 
-        sets.forEach((s: { reps: number | null; weight: number | null; workout_logs: { date: string } | null }) => {
+        ;(sets as unknown as { reps: number | null; weight: number | null; workout_logs: { date: string } | null }[]).forEach((s) => {
           const date = s.workout_logs?.date
           if (!date || s.weight == null) return
           const w = s.weight

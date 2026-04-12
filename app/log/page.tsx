@@ -58,7 +58,7 @@ export default function LogWorkout() {
       .select('exercise_id, default_sets, default_reps')
       .eq('routine_id', id)
       .order('sort_order')
-    setTemplate((data as TemplateEntry[]) || [])
+    setTemplate((data as unknown as TemplateEntry[]) || [])
     // BUG FIX: do NOT auto-apply — user must click the button
   }
 

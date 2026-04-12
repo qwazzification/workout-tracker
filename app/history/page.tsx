@@ -46,7 +46,7 @@ export default function History() {
       .order('date', { ascending: false })
       .limit(100)
       .then(({ data }) => {
-        setWorkouts((data as WorkoutEntry[]) || [])
+        setWorkouts((data as unknown as WorkoutEntry[]) || [])
         setLoading(false)
       })
   }, [])
@@ -119,7 +119,9 @@ export default function History() {
                 {isOpen && (
                   <div className="px-4 pb-4 border-t border-gray-50 pt-3">
                     {w.notes && (
-                      <p className="text-sm text-gray-500 italic mb-4">"{w.notes}"</p>
+                      <p className="text-sm text-gray-500 italic mb-4">
+                        {`"${w.notes}"`}
+                      </p>
                     )}
 
                     <div className="space-y-4">

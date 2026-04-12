@@ -33,7 +33,7 @@ export default function Dashboard() {
           .gte('date', weekStart),
       ])
 
-      setRecentWorkouts((recent as RecentWorkout[]) || [])
+      setRecentWorkouts((recent as unknown as RecentWorkout[]) || [])
       setWeekCount(count ?? 0)
       setLoading(false)
     }
