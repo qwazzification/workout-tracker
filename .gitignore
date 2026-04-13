@@ -24,6 +24,7 @@ Thumbs.db
 # IDE/editor settings
 .vscode/
 .idea/
+.claude/
 
 # TypeScript
 *.tsbuildinfo
