@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
-import WorkoutActivity from '@/components/WorkoutActivity'
+import WorkoutActivity, { FilterRange } from '@/components/WorkoutActivity'
 
 interface SetRow {
   id: string
@@ -33,6 +33,8 @@ export default function History() {
   const [workouts, setWorkouts] = useState<WorkoutEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [dateFilter, setDateFilter] = useState<FilterRange | null>(null)
+  const [routineFilter, setRoutineFilter] = useState('')
 
   useEffect(() => {
     supabase
@@ -50,6 +52,20 @@ export default function History() {
         setLoading(false)
       })
   }, [])
+
+  const routineOptions = useMemo(() => {
+    const seen = new Set<string>()
+    workouts.forEach((w) => { if (w.routine?.name) seen.add(w.routine.name) })
+    return Array.from(seen).sort()
+  }, [workouts])
+
+  const displayedWorkouts = useMemo(() => {
+    return workouts.filter((w) => {
+      if (dateFilter && (w.date < dateFilter.from || w.date > dateFilter.to)) return false
+      if (routineFilter && w.routine?.name !== routineFilter) return false
+      return true
+    })
+  }, [workouts, dateFilter, routineFilter])
 
   async function deleteWorkout(id: string) {
     if (!confirm('Delete this workout? This cannot be undone.')) return
@@ -69,13 +85,39 @@ export default function History() {
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">History</h1>
 
-      <WorkoutActivity workouts={activityData} />
+      <WorkoutActivity workouts={activityData} onFilterChange={setDateFilter} />
 
-      {workouts.length === 0 ? (
-        <div className="text-center text-gray-400 py-16">No workouts logged yet.</div>
+      {/* Routine filter */}
+      {routineOptions.length > 0 && (
+        <div className="flex items-center gap-2 mb-4">
+          <select
+            value={routineFilter}
+            onChange={(e) => setRoutineFilter(e.target.value)}
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All routines</option>
+            {routineOptions.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          {routineFilter && (
+            <button
+              onClick={() => setRoutineFilter('')}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+            >
+              Clear ×
+            </button>
+          )}
+        </div>
+      )}
+
+      {displayedWorkouts.length === 0 ? (
+        <div className="text-center text-gray-400 py-16">
+          {workouts.length === 0 ? 'No workouts logged yet.' : 'No workouts match the current filters.'}
+        </div>
       ) : (
         <div className="space-y-3">
-          {workouts.map((w) => {
+          {displayedWorkouts.map((w) => {
             const isOpen = expanded === w.id
 
             const byExercise = w.sets.reduce<Record<string, SetRow[]>>((acc, s) => {

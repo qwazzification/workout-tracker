@@ -6,11 +6,16 @@ import {
   eachDayOfInterval, eachWeekOfInterval,
   format, isAfter, startOfDay, differenceInCalendarDays,
 } from 'date-fns'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface WorkoutDay {
   date: string
   routineName: string | null
+}
+
+export interface FilterRange {
+  from: string
+  to: string
 }
 
 const PRESETS = [
@@ -26,7 +31,13 @@ function parseDate(str: string) {
   return new Date(str + 'T12:00:00')
 }
 
-export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }) {
+export default function WorkoutActivity({
+  workouts,
+  onFilterChange,
+}: {
+  workouts: WorkoutDay[]
+  onFilterChange?: (range: FilterRange | null) => void
+}) {
   const today = startOfDay(new Date())
   const todayStr = format(today, 'yyyy-MM-dd')
 
@@ -34,10 +45,17 @@ export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }
   const [toDate, setToDate] = useState(todayStr)
   const [activePreset, setActivePreset] = useState<string>('5W')
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
+
+  function clearSelection() {
+    setSelectedDay(null)
+    setSelectedWeek(null)
+    onFilterChange?.(null)
+  }
 
   function applyPreset(label: string, days: number) {
     setActivePreset(label)
-    setSelectedDay(null)
+    clearSelection()
     setToDate(todayStr)
     if (days === 0) {
       setFromDate(workouts.length > 0 ? workouts[workouts.length - 1].date : todayStr)
@@ -80,7 +98,7 @@ export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd })
   const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
-  // Bar chart: workouts per week
+  // Bar chart: workouts per week — include weekStart/weekEnd for click filtering
   const chartData = useMemo(() => {
     if (filtered.length === 0) return []
     return eachWeekOfInterval({ start: parseDate(fromDate), end: parseDate(toDate) }).map((weekStart) => {
@@ -90,13 +108,27 @@ export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }
       return {
         week: format(weekStart, 'M/d'),
         workouts: filtered.filter((w) => w.date >= ws && w.date <= we).length,
+        weekStart: ws,
+        weekEnd: we,
       }
     })
   }, [filtered, fromDate, toDate])
 
+  const hasActiveFilter = selectedDay !== null || selectedWeek !== null
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 p-4">
-      <h2 className="text-sm font-semibold text-gray-700 mb-3">Activity</h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-gray-700">Activity</h2>
+        {hasActiveFilter && (
+          <button
+            onClick={clearSelection}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Clear filter ×
+          </button>
+        )}
+      </div>
 
       {/* Preset buttons */}
       <div className="flex gap-1.5 mb-3 flex-wrap">
@@ -121,7 +153,7 @@ export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }
           type="date"
           value={fromDate}
           max={toDate}
-          onChange={(e) => { setFromDate(e.target.value); setActivePreset('') }}
+          onChange={(e) => { setFromDate(e.target.value); setActivePreset(''); clearSelection() }}
           className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <span className="text-xs text-gray-400">to</span>
@@ -130,7 +162,7 @@ export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }
           value={toDate}
           min={fromDate}
           max={todayStr}
-          onChange={(e) => { setToDate(e.target.value); setActivePreset('') }}
+          onChange={(e) => { setToDate(e.target.value); setActivePreset(''); clearSelection() }}
           className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
@@ -161,7 +193,13 @@ export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }
               return (
                 <button
                   key={dateStr}
-                  onClick={() => hasWorkout && setSelectedDay(isSelected ? null : dateStr)}
+                  onClick={() => {
+                    if (!hasWorkout) return
+                    const next = isSelected ? null : dateStr
+                    setSelectedDay(next)
+                    setSelectedWeek(null)
+                    onFilterChange?.(next ? { from: next, to: next } : null)
+                  }}
                   className={`aspect-square rounded-md flex items-center justify-center text-xs font-medium transition-all ${cellClass}`}
                 >
                   {format(day, 'd')}
@@ -178,19 +216,52 @@ export default function WorkoutActivity({ workouts }: { workouts: WorkoutDay[] }
           )}
           <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
             <div className="w-3 h-3 rounded bg-blue-600" />
-            <span>Tap a day for details</span>
+            <span>
+              {hasActiveFilter
+                ? 'Filtering workouts below · tap again to clear'
+                : 'Tap a workout day to filter below'}
+            </span>
           </div>
         </>
       ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="week" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-            <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: number) => [v, 'Workouts']} />
-            <Bar dataKey="workouts" fill="#2563eb" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        <>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="week" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+              <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: number) => [v, 'Workouts']} />
+              <Bar
+                dataKey="workouts"
+                radius={[3, 3, 0, 0]}
+                cursor="pointer"
+                onClick={(data: { weekStart: string; weekEnd: string }) => {
+                  const isSame = selectedWeek === data.weekStart
+                  const next = isSame ? null : data.weekStart
+                  setSelectedWeek(next)
+                  setSelectedDay(null)
+                  onFilterChange?.(next ? { from: data.weekStart, to: data.weekEnd } : null)
+                }}
+              >
+                {chartData.map((entry) => (
+                  <Cell
+                    key={entry.weekStart}
+                    fill="#2563eb"
+                    opacity={selectedWeek && selectedWeek !== entry.weekStart ? 0.35 : 1}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+            <div className="w-3 h-3 rounded bg-blue-600" />
+            <span>
+              {hasActiveFilter
+                ? 'Filtering workouts below · tap again to clear'
+                : 'Tap a bar to filter by week'}
+            </span>
+          </div>
+        </>
       )}
 
       {/* Stats */}

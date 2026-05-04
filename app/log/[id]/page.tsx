@@ -98,6 +98,16 @@ export default function EditWorkout() {
     setEntries((prev) => prev.filter((_, i) => i !== exIdx))
   }
 
+  function moveExercise(exIdx: number, dir: 'up' | 'down') {
+    setEntries((prev) => {
+      const next = [...prev]
+      const swapIdx = dir === 'up' ? exIdx - 1 : exIdx + 1
+      if (swapIdx < 0 || swapIdx >= next.length) return prev
+      ;[next[exIdx], next[swapIdx]] = [next[swapIdx], next[exIdx]]
+      return next
+    })
+  }
+
   function addSet(exIdx: number) {
     setEntries((prev) =>
       prev.map((entry, i) => {
@@ -143,9 +153,10 @@ export default function EditWorkout() {
   async function createExercise(exIdx: number) {
     const name = newExName.trim()
     if (!name) return
+    const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase
       .from('exercises')
-      .insert({ name, muscle_group: newExMuscle.trim() || null })
+      .insert({ name, muscle_group: newExMuscle.trim() || null, user_id: user!.id })
       .select()
       .single()
     if (data) {
@@ -249,18 +260,30 @@ export default function EditWorkout() {
 
       {entries.map((entry, exIdx) => (
         <div key={exIdx} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4">
-          <div className="flex gap-2 mb-1">
+          <div className="flex gap-2 mb-1 items-center">
             <select
               value={entry.exercise_id}
               onChange={(e) => updateExerciseId(exIdx, e.target.value)}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select exercise...</option>
               {exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
             </select>
+            <div className="flex flex-col shrink-0">
+              <button
+                onClick={() => moveExercise(exIdx, 'up')}
+                disabled={exIdx === 0}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-xs leading-none py-0.5 px-1"
+              >▲</button>
+              <button
+                onClick={() => moveExercise(exIdx, 'down')}
+                disabled={exIdx === entries.length - 1}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-xs leading-none py-0.5 px-1"
+              >▼</button>
+            </div>
             <button
               onClick={() => removeExercise(exIdx)}
-              className="text-red-400 hover:text-red-600 px-2 text-lg leading-none"
+              className="text-red-400 hover:text-red-600 px-2 text-lg leading-none shrink-0"
               title="Remove exercise"
             >×</button>
           </div>
@@ -312,13 +335,13 @@ export default function EditWorkout() {
                 type="number" min="0" value={set.reps}
                 onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
                 placeholder="0"
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <input
                 type="number" min="0" step="2.5" value={set.weight}
                 onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
                 placeholder="0"
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
             </div>

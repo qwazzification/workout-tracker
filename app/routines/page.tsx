@@ -68,7 +68,8 @@ export default function Routines() {
     const name = newRoutineName.trim()
     if (!name) return
     setSaving(true)
-    const { data } = await supabase.from('routines').insert({ name }).select().single()
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data } = await supabase.from('routines').insert({ name, user_id: user!.id }).select().single()
     if (data) {
       setRoutines((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
       setRoutineExercises((prev) => ({ ...prev, [data.id]: [] }))
@@ -88,9 +89,10 @@ export default function Routines() {
     const name = newExName.trim()
     if (!name) return
     setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase
       .from('exercises')
-      .insert({ name, muscle_group: newExMuscle.trim() || null })
+      .insert({ name, muscle_group: newExMuscle.trim() || null, user_id: user!.id })
       .select()
       .single()
     if (data) {
@@ -124,6 +126,20 @@ export default function Routines() {
       }))
       setAddForm({ exerciseId: '', sets: '3', reps: '' })
     }
+  }
+
+  async function moveRoutineExercise(routineId: string, idx: number, dir: 'up' | 'down') {
+    const current = routineExercises[routineId] || []
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= current.length) return
+    const newOrder = [...current]
+    ;[newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]]
+    setRoutineExercises((prev) => ({ ...prev, [routineId]: newOrder }))
+    await Promise.all(
+      newOrder.map((re, i) =>
+        supabase.from('routine_exercises').update({ sort_order: i }).eq('id', re.id)
+      )
+    )
   }
 
   async function removeExerciseFromRoutine(reId: string, routineId: string) {
@@ -293,17 +309,30 @@ export default function Routines() {
                           <p className="text-sm text-gray-400 mb-4">No exercises yet.</p>
                         ) : (
                           <div className="mb-4 space-y-2">
-                            <div className="grid grid-cols-[1fr_auto_auto_auto] text-xs text-gray-400 font-medium px-1 mb-1">
+                            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] text-xs text-gray-400 font-medium px-1 mb-1 gap-2">
                               <span>Exercise</span>
-                              <span className="mr-3">Sets</span>
-                              <span className="mr-4">Reps</span>
+                              <span>Sets</span>
+                              <span>Reps</span>
+                              <span />
                               <span />
                             </div>
-                            {rExercises.map((re) => (
-                              <div key={re.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center text-sm px-1">
-                                <span className="text-gray-800">{re.exercise.name}</span>
-                                <span className="text-gray-500 mr-3">{re.default_sets}</span>
-                                <span className="text-gray-500 mr-4">{re.default_reps ?? '—'}</span>
+                            {rExercises.map((re, idx) => (
+                              <div key={re.id} className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center text-sm px-1 gap-2">
+                                <span className="text-gray-800 truncate">{re.exercise.name}</span>
+                                <span className="text-gray-500">{re.default_sets}</span>
+                                <span className="text-gray-500">{re.default_reps ?? '—'}</span>
+                                <div className="flex flex-col items-center">
+                                  <button
+                                    onClick={() => moveRoutineExercise(routine.id, idx, 'up')}
+                                    disabled={idx === 0}
+                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-xs leading-none py-0.5"
+                                  >▲</button>
+                                  <button
+                                    onClick={() => moveRoutineExercise(routine.id, idx, 'down')}
+                                    disabled={idx === rExercises.length - 1}
+                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-xs leading-none py-0.5"
+                                  >▼</button>
+                                </div>
                                 <button
                                   onClick={() => removeExerciseFromRoutine(re.id, routine.id)}
                                   className="text-red-400 hover:text-red-600 text-lg leading-none"
@@ -314,40 +343,42 @@ export default function Routines() {
                         )}
 
                         {/* Add exercise to routine */}
-                        <div className="flex gap-2 items-center">
+                        <div className="space-y-2">
                           <select
                             value={addForm.exerciseId}
                             onChange={(e) => setAddForm((p) => ({ ...p, exerciseId: e.target.value }))}
-                            className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">Add exercise...</option>
                             {exercises
                               .filter((ex) => !alreadyAdded.has(ex.id))
                               .map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
                           </select>
-                          <input
-                            type="number" min="1" max="20" value={addForm.sets}
-                            onChange={(e) => setAddForm((p) => ({ ...p, sets: e.target.value }))}
-                            title="Default sets"
-                            placeholder="Sets"
-                            className="w-14 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <input
-                            type="number" min="1" max="100" value={addForm.reps}
-                            onChange={(e) => setAddForm((p) => ({ ...p, reps: e.target.value }))}
-                            title="Default reps"
-                            placeholder="Reps"
-                            className="w-14 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <button
-                            onClick={() => addExerciseToRoutine(routine.id)}
-                            disabled={!addForm.exerciseId}
-                            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
-                          >Add</button>
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="number" min="1" max="20" value={addForm.sets}
+                              onChange={(e) => setAddForm((p) => ({ ...p, sets: e.target.value }))}
+                              title="Default sets"
+                              placeholder="Sets"
+                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <input
+                              type="number" min="1" max="100" value={addForm.reps}
+                              onChange={(e) => setAddForm((p) => ({ ...p, reps: e.target.value }))}
+                              title="Default reps"
+                              placeholder="Reps"
+                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button
+                              onClick={() => addExerciseToRoutine(routine.id)}
+                              disabled={!addForm.exerciseId}
+                              className="shrink-0 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                            >Add</button>
+                          </div>
+                          <p className="text-xs text-gray-400 pl-1">
+                            Sets · Reps = defaults pre-filled when loading template
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-400 mt-1 pl-1">
-                          Sets · Reps = defaults pre-filled when loading template
-                        </p>
 
                         <button
                           onClick={() => deleteRoutine(routine.id)}
