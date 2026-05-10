@@ -26,7 +26,6 @@ const PRESETS = [
   { label: 'All', days: 0 },
 ] as const
 
-// Use noon to avoid timezone-related day-shift issues
 function parseDate(str: string) {
   return new Date(str + 'T12:00:00')
 }
@@ -64,7 +63,6 @@ export default function WorkoutActivity({
     }
   }
 
-  // Map date -> routineName for fast lookup
   const workoutMap = useMemo(() => {
     const map = new Map<string, string | null>()
     workouts.forEach((w) => { if (!map.has(w.date)) map.set(w.date, w.routineName) })
@@ -79,7 +77,6 @@ export default function WorkoutActivity({
   const rangeDays = Math.max(1, differenceInCalendarDays(parseDate(toDate), parseDate(fromDate)) + 1)
   const useCalendar = rangeDays <= 42
 
-  // Stats
   const weekCount = Math.max(1, Math.ceil(rangeDays / 7))
   const weeklyAvg = (filtered.length / weekCount).toFixed(1)
 
@@ -92,13 +89,11 @@ export default function WorkoutActivity({
     return acc
   }, [filtered])
 
-  // Calendar grid: align to week boundaries
   const calendarStart = startOfWeek(parseDate(fromDate))
   const calendarEnd = addDays(startOfWeek(parseDate(toDate)), 6)
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd })
   const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
-  // Bar chart: workouts per week — include weekStart/weekEnd for click filtering
   const chartData = useMemo(() => {
     if (filtered.length === 0) return []
     return eachWeekOfInterval({ start: parseDate(fromDate), end: parseDate(toDate) }).map((weekStart) => {
@@ -115,16 +110,14 @@ export default function WorkoutActivity({
   }, [filtered, fromDate, toDate])
 
   const hasActiveFilter = selectedDay !== null || selectedWeek !== null
+  const presetInactive = 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-gray-700">Activity</h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Activity</h2>
         {hasActiveFilter && (
-          <button
-            onClick={clearSelection}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-          >
+          <button onClick={clearSelection} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
             Clear filter ×
           </button>
         )}
@@ -137,9 +130,7 @@ export default function WorkoutActivity({
             key={p.label}
             onClick={() => applyPreset(p.label, p.days)}
             className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              activePreset === p.label
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              activePreset === p.label ? 'bg-blue-600 text-white' : presetInactive
             }`}
           >
             {p.label}
@@ -147,32 +138,26 @@ export default function WorkoutActivity({
         ))}
       </div>
 
-      {/* Custom date range inputs */}
+      {/* Custom date range */}
       <div className="flex gap-2 items-center mb-4">
         <input
-          type="date"
-          value={fromDate}
-          max={toDate}
+          type="date" value={fromDate} max={toDate}
           onChange={(e) => { setFromDate(e.target.value); setActivePreset(''); clearSelection() }}
-          className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <span className="text-xs text-gray-400">to</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">to</span>
         <input
-          type="date"
-          value={toDate}
-          min={fromDate}
-          max={todayStr}
+          type="date" value={toDate} min={fromDate} max={todayStr}
           onChange={(e) => { setToDate(e.target.value); setActivePreset(''); clearSelection() }}
-          className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
-      {/* Calendar (≤42 days) or Bar chart (>42 days) */}
       {useCalendar ? (
         <>
           <div className="grid grid-cols-7 gap-1 mb-1">
             {DAY_LABELS.map((d) => (
-              <div key={d} className="text-center text-xs text-gray-400">{d}</div>
+              <div key={d} className="text-center text-xs text-gray-400 dark:text-gray-500">{d}</div>
             ))}
           </div>
           <div className="grid grid-cols-7 gap-1">
@@ -185,10 +170,10 @@ export default function WorkoutActivity({
               const isSelected = selectedDay === dateStr
 
               let cellClass: string
-              if (!inRange || isFuture) cellClass = 'text-gray-100 cursor-default'
-              else if (hasWorkout) cellClass = `bg-blue-600 text-white cursor-pointer${isSelected ? ' ring-2 ring-blue-300 ring-offset-1' : ''}`
-              else if (isToday) cellClass = 'bg-gray-100 text-gray-600 ring-1 ring-gray-300'
-              else cellClass = 'text-gray-300'
+              if (!inRange || isFuture) cellClass = 'text-gray-200 dark:text-gray-700 cursor-default'
+              else if (hasWorkout) cellClass = `bg-blue-600 text-white cursor-pointer${isSelected ? ' ring-2 ring-blue-300 ring-offset-1 dark:ring-offset-gray-800' : ''}`
+              else if (isToday) cellClass = 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-gray-600'
+              else cellClass = 'text-gray-300 dark:text-gray-600'
 
               return (
                 <button
@@ -208,13 +193,13 @@ export default function WorkoutActivity({
             })}
           </div>
           {selectedDay && workoutMap.has(selectedDay) && (
-            <div className="mt-3 text-sm bg-blue-50 text-blue-800 rounded-lg px-3 py-2">
+            <div className="mt-3 text-sm bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-300 rounded-lg px-3 py-2">
               <span className="font-medium">{format(parseDate(selectedDay), 'EEEE, MMMM d')}</span>
               {' · '}
               {workoutMap.get(selectedDay) || 'Workout'}
             </div>
           )}
-          <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
+          <div className="flex items-center gap-2 mt-3 text-xs text-gray-400 dark:text-gray-500">
             <div className="w-3 h-3 rounded bg-blue-600" />
             <span>
               {hasActiveFilter
@@ -227,10 +212,13 @@ export default function WorkoutActivity({
         <>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="week" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: number) => [v, 'Workouts']} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#9ca3af' }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ fontSize: 12, backgroundColor: '#1f2937', border: '1px solid #374151', color: '#f9fafb' }}
+                formatter={(v: number) => [v, 'Workouts']}
+              />
               <Bar
                 dataKey="workouts"
                 radius={[3, 3, 0, 0]}
@@ -253,7 +241,7 @@ export default function WorkoutActivity({
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+          <div className="flex items-center gap-2 mt-2 text-xs text-gray-400 dark:text-gray-500">
             <div className="w-3 h-3 rounded bg-blue-600" />
             <span>
               {hasActiveFilter
@@ -265,31 +253,30 @@ export default function WorkoutActivity({
       )}
 
       {/* Stats */}
-      <div className="mt-4 pt-4 border-t border-gray-100">
+      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <div className="text-2xl font-bold text-blue-600">{filtered.length}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Total workouts</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Total workouts</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-blue-600">{weeklyAvg}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Per week avg</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Per week avg</div>
           </div>
         </div>
 
-        {/* Per-month breakdown with mini bar */}
         {Object.keys(byMonth).length > 0 && (
           <div className="space-y-2">
             {Object.entries(byMonth).map(([month, count]) => (
               <div key={month} className="flex items-center gap-2 text-xs">
-                <span className="text-gray-500 w-20 shrink-0">{month}</span>
-                <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                <span className="text-gray-500 dark:text-gray-400 w-20 shrink-0">{month}</span>
+                <div className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                   <div
                     className="bg-blue-500 h-full rounded-full"
                     style={{ width: `${(count / filtered.length) * 100}%` }}
                   />
                 </div>
-                <span className="text-gray-700 font-medium w-4 text-right">{count}</span>
+                <span className="text-gray-700 dark:text-gray-300 font-medium w-4 text-right">{count}</span>
               </div>
             ))}
           </div>

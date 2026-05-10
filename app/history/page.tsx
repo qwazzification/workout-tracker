@@ -79,21 +79,20 @@ export default function History() {
     routineName: w.routine?.name ?? null,
   }))
 
-  if (loading) return <div className="text-gray-400 text-sm">Loading...</div>
+  if (loading) return <div className="text-gray-400 dark:text-gray-500 text-sm">Loading...</div>
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">History</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Activity</h1>
 
       <WorkoutActivity workouts={activityData} onFilterChange={setDateFilter} />
 
-      {/* Routine filter */}
       {routineOptions.length > 0 && (
         <div className="flex items-center gap-2 mb-4">
           <select
             value={routineFilter}
             onChange={(e) => setRoutineFilter(e.target.value)}
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All routines</option>
             {routineOptions.map((name) => (
@@ -112,7 +111,7 @@ export default function History() {
       )}
 
       {displayedWorkouts.length === 0 ? (
-        <div className="text-center text-gray-400 py-16">
+        <div className="text-center text-gray-400 dark:text-gray-500 py-16">
           {workouts.length === 0 ? 'No workouts logged yet.' : 'No workouts match the current filters.'}
         </div>
       ) : (
@@ -127,7 +126,6 @@ export default function History() {
               return acc
             }, {})
 
-            // Map exercise name -> notes for display
             const exNotesByName: Record<string, string> = {}
             w.workout_exercise_notes?.forEach((n) => {
               const name = n.exercise?.name ?? 'Unknown'
@@ -139,29 +137,29 @@ export default function History() {
             return (
               <div
                 key={w.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
               >
                 <button
                   onClick={() => setExpanded(isOpen ? null : w.id)}
                   className="w-full text-left p-4 flex justify-between items-center"
                 >
                   <div>
-                    <div className="font-semibold text-gray-900">
+                    <div className="font-semibold text-gray-900 dark:text-white">
                       {w.routine?.name ?? 'Workout'}
                     </div>
-                    <div className="text-sm text-gray-500 mt-0.5">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                       {format(new Date(w.date + 'T00:00:00'), 'EEEE, MMMM d, yyyy')}
                       {' · '}
                       {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
                     </div>
                   </div>
-                  <span className="text-gray-400 ml-2">{isOpen ? '▲' : '▼'}</span>
+                  <span className="text-gray-400 dark:text-gray-500 ml-2">{isOpen ? '▲' : '▼'}</span>
                 </button>
 
                 {isOpen && (
-                  <div className="px-4 pb-4 border-t border-gray-50 pt-3">
+                  <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
                     {w.notes && (
-                      <p className="text-sm text-gray-500 italic mb-4">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic mb-4">
                         {`"${w.notes}"`}
                       </p>
                     )}
@@ -169,13 +167,13 @@ export default function History() {
                     <div className="space-y-4">
                       {Object.entries(byExercise).map(([name, sets]) => (
                         <div key={name}>
-                          <div className="text-sm font-semibold text-gray-800 mb-1">{name}</div>
+                          <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">{name}</div>
                           {exNotesByName[name] && (
-                            <p className="text-xs text-gray-400 italic mb-2">
+                            <p className="text-xs text-gray-400 dark:text-gray-500 italic mb-2">
                               {exNotesByName[name]}
                             </p>
                           )}
-                          <div className="grid grid-cols-3 text-xs text-gray-400 font-medium mb-1 px-1">
+                          <div className="grid grid-cols-3 text-xs text-gray-400 dark:text-gray-500 font-medium mb-1 px-1">
                             <span>Set</span>
                             <span>Reps</span>
                             <span>Weight</span>
@@ -185,7 +183,7 @@ export default function History() {
                             .map((s) => (
                               <div
                                 key={s.id}
-                                className="grid grid-cols-3 text-sm text-gray-700 px-1 py-0.5"
+                                className="grid grid-cols-3 text-sm text-gray-700 dark:text-gray-300 px-1 py-0.5"
                               >
                                 <span>{s.set_number}</span>
                                 <span>{s.reps ?? '—'}</span>

@@ -8,8 +8,11 @@ export interface Exercise {
   id: string
   name: string
   muscle_group: string | null
+  primary_muscle: string | null
+  secondary_muscle: string | null
   notes: string | null
   link: string | null
+  user_id: string | null
   created_at: string
 }
 

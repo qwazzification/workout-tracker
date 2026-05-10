@@ -24,7 +24,7 @@ interface ExerciseChartProps {
 export default function ExerciseChart({ data, metric }: ExerciseChartProps) {
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-52 text-gray-400 text-sm">
+      <div className="flex items-center justify-center h-52 text-gray-400 dark:text-gray-500 text-sm">
         No data yet for this exercise.
       </div>
     )
@@ -35,11 +35,11 @@ export default function ExerciseChart({ data, metric }: ExerciseChartProps) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={data} margin={{ top: 5, right: 10, left: -15, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-        <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-        <YAxis tick={{ fontSize: 11 }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+        <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
+        <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
         <Tooltip
-          contentStyle={{ fontSize: 12 }}
+          contentStyle={{ fontSize: 12, backgroundColor: '#1f2937', border: '1px solid #374151', color: '#f9fafb' }}
           formatter={(v: number) => [`${v} lbs`, label]}
         />
         <Line

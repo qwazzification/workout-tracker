@@ -28,7 +28,7 @@ export default function Routines() {
 
   // Exercise editing state (Exercises tab)
   const [editingExId, setEditingExId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', muscle_group: '', notes: '', link: '' })
+  const [editForm, setEditForm] = useState({ name: '', muscle_group: '', primary_muscle: '', secondary_muscle: '', notes: '', link: '' })
 
   const [saving, setSaving] = useState(false)
 
@@ -157,6 +157,8 @@ export default function Routines() {
     setEditForm({
       name: ex.name,
       muscle_group: ex.muscle_group ?? '',
+      primary_muscle: ex.primary_muscle ?? '',
+      secondary_muscle: ex.secondary_muscle ?? '',
       notes: ex.notes ?? '',
       link: ex.link ?? '',
     })
@@ -170,6 +172,8 @@ export default function Routines() {
       .update({
         name: editForm.name.trim(),
         muscle_group: editForm.muscle_group.trim() || null,
+        primary_muscle: editForm.primary_muscle.trim() || null,
+        secondary_muscle: editForm.secondary_muscle.trim() || null,
         notes: editForm.notes.trim() || null,
         link: editForm.link.trim() || null,
       })
@@ -408,22 +412,34 @@ export default function Routines() {
                     {group}
                   </h2>
                   <div className="space-y-2">
-                    {exes.map((ex) => (
+                    {exes.map((ex) => {
+                      const isCustom = ex.user_id !== null
+                      return (
                       <div key={ex.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                         <button
-                          onClick={() => editingExId === ex.id ? setEditingExId(null) : startEditExercise(ex)}
-                          className="w-full text-left px-4 py-3 flex justify-between items-center"
+                          onClick={() => {
+                            if (!isCustom) return
+                            editingExId === ex.id ? setEditingExId(null) : startEditExercise(ex)
+                          }}
+                          className={`w-full text-left px-4 py-3 flex justify-between items-center ${!isCustom ? 'cursor-default' : ''}`}
                         >
                           <div>
-                            <span className="font-medium text-gray-900">{ex.name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">{ex.name}</span>
+                              {isCustom && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">Custom</span>
+                              )}
+                            </div>
                             {ex.notes && (
                               <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">{ex.notes}</p>
                             )}
                           </div>
-                          <span className="text-gray-400 text-xs ml-2">{editingExId === ex.id ? '▲' : '▼'}</span>
+                          {isCustom && (
+                            <span className="text-gray-400 text-xs ml-2">{editingExId === ex.id ? '▲' : '▼'}</span>
+                          )}
                         </button>
 
-                        {editingExId === ex.id && (
+                        {isCustom && editingExId === ex.id && (
                           <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-3">
                             <div>
                               <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -434,11 +450,29 @@ export default function Routines() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Muscle group</label>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Muscle Group</label>
                               <input
                                 value={editForm.muscle_group}
                                 onChange={(e) => setEditForm((p) => ({ ...p, muscle_group: e.target.value }))}
                                 placeholder="e.g. Chest, Back, Legs..."
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Primary muscle</label>
+                              <input
+                                value={editForm.primary_muscle}
+                                onChange={(e) => setEditForm((p) => ({ ...p, primary_muscle: e.target.value }))}
+                                placeholder="e.g. Triceps, Shoulders..."
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Secondary muscles</label>
+                              <input
+                                value={editForm.secondary_muscle}
+                                onChange={(e) => setEditForm((p) => ({ ...p, secondary_muscle: e.target.value }))}
+                                placeholder="e.g. Triceps, Shoulders..."
                                 className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
@@ -480,7 +514,8 @@ export default function Routines() {
                           </div>
                         )}
                       </div>
-                    ))}
+                    )
+                    })}
                   </div>
                 </div>
               ))
