@@ -246,19 +246,19 @@ export default function Routines() {
                   value={newExName}
                   onChange={(e) => setNewExName(e.target.value)}
                   placeholder="Exercise name"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
                 <div className="flex gap-2">
                   <input
                     value={newExMuscle}
                     onChange={(e) => setNewExMuscle(e.target.value)}
                     placeholder="Muscle group (optional)"
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                   <button
                     onClick={addExerciseToLibrary}
                     disabled={saving || !newExName.trim()}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                    className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
                   >Add</button>
                 </div>
               </div>
@@ -273,12 +273,12 @@ export default function Routines() {
                 onChange={(e) => setNewRoutineName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addRoutine()}
                 placeholder="New routine name (e.g. Push Day)"
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
               <button
                 onClick={addRoutine}
                 disabled={saving || !newRoutineName.trim()}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
               >Add</button>
             </div>
           </div>
@@ -351,7 +351,7 @@ export default function Routines() {
                           <select
                             value={addForm.exerciseId}
                             onChange={(e) => setAddForm((p) => ({ ...p, exerciseId: e.target.value }))}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                           >
                             <option value="">Add exercise...</option>
                             {exercises
@@ -364,19 +364,19 @@ export default function Routines() {
                               onChange={(e) => setAddForm((p) => ({ ...p, sets: e.target.value }))}
                               title="Default sets"
                               placeholder="Sets"
-                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-500"
                             />
                             <input
                               type="number" min="1" max="100" value={addForm.reps}
                               onChange={(e) => setAddForm((p) => ({ ...p, reps: e.target.value }))}
                               title="Default reps"
                               placeholder="Reps"
-                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-500"
                             />
                             <button
                               onClick={() => addExerciseToRoutine(routine.id)}
                               disabled={!addForm.exerciseId}
-                              className="shrink-0 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                              className="shrink-0 bg-brand-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
                             >Add</button>
                           </div>
                           <p className="text-xs text-gray-400 pl-1">
@@ -427,7 +427,7 @@ export default function Routines() {
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-900">{ex.name}</span>
                               {isCustom && (
-                                <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">Custom</span>
+                                <span className="text-xs bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-medium">Custom</span>
                               )}
                             </div>
                             {ex.notes && (
@@ -446,7 +446,7 @@ export default function Routines() {
                               <input
                                 value={editForm.name}
                                 onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
                               />
                             </div>
                             <div>
@@ -455,7 +455,7 @@ export default function Routines() {
                                 value={editForm.muscle_group}
                                 onChange={(e) => setEditForm((p) => ({ ...p, muscle_group: e.target.value }))}
                                 placeholder="e.g. Chest, Back, Legs..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
                               />
                             </div>
                             <div>
@@ -464,7 +464,7 @@ export default function Routines() {
                                 value={editForm.primary_muscle}
                                 onChange={(e) => setEditForm((p) => ({ ...p, primary_muscle: e.target.value }))}
                                 placeholder="e.g. Triceps, Shoulders..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
                               />
                             </div>
                             <div>
@@ -473,7 +473,7 @@ export default function Routines() {
                                 value={editForm.secondary_muscle}
                                 onChange={(e) => setEditForm((p) => ({ ...p, secondary_muscle: e.target.value }))}
                                 placeholder="e.g. Triceps, Shoulders..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
                               />
                             </div>
                             <div>
@@ -483,7 +483,7 @@ export default function Routines() {
                                 onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))}
                                 rows={3}
                                 placeholder="Form cues, tips, reminders..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
                               />
                             </div>
                             <div>
@@ -493,14 +493,14 @@ export default function Routines() {
                                 value={editForm.link}
                                 onChange={(e) => setEditForm((p) => ({ ...p, link: e.target.value }))}
                                 placeholder="https://..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
                               />
                             </div>
                             <div className="flex gap-3 pt-1">
                               <button
                                 onClick={saveExercise}
                                 disabled={saving || !editForm.name.trim()}
-                                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                                className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
                               >Save</button>
                               <button
                                 onClick={() => setEditingExId(null)}

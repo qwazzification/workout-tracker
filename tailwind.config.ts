@@ -10,9 +10,17 @@ const config: Config = {
   extend: {
     colors: {
       brand: {
-        500: '#8b5cf6',  // purple, for example
-        600: '#7c3aed',
-        700: '#6d28d9',
+        50:  '#fff3ed',
+        100: '#ffdecb',
+        200: '#ffbf99',
+        300: '#ff9e69',
+        400: '#ff8450',
+        500: '#ff6e35',
+        600: '#e55422',
+        700: '#c23d12',
+        800: '#8f2908',
+        900: '#5c1604',
+        950: '#330a02',
       }
     }
   }

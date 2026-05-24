@@ -207,14 +207,14 @@ export default function EditWorkout() {
       await supabase.from('workout_exercise_notes').insert(notesToInsert)
     }
 
-    router.push('/history')
+    router.push('/workouts/' + id)
   }
 
   if (loading) return <div className="text-gray-400 dark:text-gray-500 text-sm">Loading...</div>
   if (notFound) return (
     <div className="text-center py-16">
       <p className="text-gray-400 dark:text-gray-500 mb-4">Workout not found.</p>
-      <Link href="/history" className="text-blue-600 hover:underline text-sm">← Back to history</Link>
+      <Link href="/history" className="text-brand-600 hover:underline text-sm">← Back to history</Link>
     </div>
   )
 
@@ -232,7 +232,7 @@ export default function EditWorkout() {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
         </div>
         <div>
@@ -240,7 +240,7 @@ export default function EditWorkout() {
           <select
             value={routineId}
             onChange={(e) => setRoutineId(e.target.value)}
-            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           >
             <option value="">No routine</option>
             {routines.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -253,7 +253,7 @@ export default function EditWorkout() {
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
             placeholder="How did it go?"
-            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
           />
         </div>
       </div>
@@ -264,7 +264,7 @@ export default function EditWorkout() {
             <select
               value={entry.exercise_id}
               onChange={(e) => updateExerciseId(exIdx, e.target.value)}
-              className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="">Select exercise...</option>
               {exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
@@ -295,19 +295,19 @@ export default function EditWorkout() {
                 value={newExName}
                 onChange={(e) => setNewExName(e.target.value)}
                 placeholder="Exercise name"
-                className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
               />
               <div className="flex gap-2">
                 <input
                   value={newExMuscle}
                   onChange={(e) => setNewExMuscle(e.target.value)}
                   placeholder="Muscle group (optional)"
-                  className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 />
                 <button
                   onClick={() => createExercise(exIdx)}
                   disabled={!newExName.trim()}
-                  className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                  className="bg-brand-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
                 >Create</button>
                 <button
                   onClick={() => { setCreatingForIdx(null); setNewExName(''); setNewExMuscle('') }}
@@ -318,7 +318,7 @@ export default function EditWorkout() {
           ) : (
             <button
               onClick={() => { setCreatingForIdx(exIdx); setNewExName(''); setNewExMuscle('') }}
-              className="text-xs text-gray-400 dark:text-gray-500 hover:text-blue-600 mb-3 pl-1"
+              className="text-xs text-gray-400 dark:text-gray-500 hover:text-brand-600 mb-3 pl-1"
             >+ Create new exercise</button>
           )}
 
@@ -335,18 +335,18 @@ export default function EditWorkout() {
                 type="number" min="0" value={set.reps}
                 onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
                 placeholder="0"
-                className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
               <input
                 type="number" min="0" step="2.5" value={set.weight}
                 onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
                 placeholder="0"
-                className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
               <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
             </div>
           ))}
-          <button onClick={() => addSet(exIdx)} className="text-blue-600 text-sm hover:underline mt-1">
+          <button onClick={() => addSet(exIdx)} className="text-brand-600 text-sm hover:underline mt-1">
             + Add set
           </button>
 
@@ -355,14 +355,14 @@ export default function EditWorkout() {
             value={entry.notes}
             onChange={(e) => updateExerciseNotes(exIdx, e.target.value)}
             placeholder="Exercise notes..."
-            className="mt-3 w-full text-xs border-0 border-b border-gray-200 dark:border-gray-700 focus:border-blue-400 bg-transparent py-1 focus:outline-none text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600"
+            className="mt-3 w-full text-xs border-0 border-b border-gray-200 dark:border-gray-700 focus:border-brand-400 bg-transparent py-1 focus:outline-none text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600"
           />
         </div>
       ))}
 
       <button
         onClick={addExercise}
-        className="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-4 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 transition-colors mb-4"
+        className="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-4 text-gray-500 dark:text-gray-400 hover:border-brand-400 hover:text-brand-600 transition-colors mb-4"
       >
         + Add Exercise
       </button>
@@ -370,7 +370,7 @@ export default function EditWorkout() {
       <button
         onClick={save}
         disabled={saving || entries.length === 0}
-        className="w-full bg-blue-600 text-white rounded-xl py-3 font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full bg-brand-600 text-white rounded-xl py-3 font-semibold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {saving ? 'Saving...' : 'Save Changes'}
       </button>

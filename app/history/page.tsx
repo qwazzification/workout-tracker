@@ -32,7 +32,6 @@ interface WorkoutEntry {
 export default function History() {
   const [workouts, setWorkouts] = useState<WorkoutEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [dateFilter, setDateFilter] = useState<FilterRange | null>(null)
   const [routineFilter, setRoutineFilter] = useState('')
 
@@ -67,16 +66,10 @@ export default function History() {
     })
   }, [workouts, dateFilter, routineFilter])
 
-  async function deleteWorkout(id: string) {
-    if (!confirm('Delete this workout? This cannot be undone.')) return
-    await supabase.from('workout_logs').delete().eq('id', id)
-    setWorkouts((prev) => prev.filter((w) => w.id !== id))
-    if (expanded === id) setExpanded(null)
-  }
-
   const activityData = workouts.map((w) => ({
     date: w.date,
     routineName: w.routine?.name ?? null,
+    workoutId: w.id,
   }))
 
   if (loading) return <div className="text-gray-400 dark:text-gray-500 text-sm">Loading...</div>
@@ -92,7 +85,7 @@ export default function History() {
           <select
             value={routineFilter}
             onChange={(e) => setRoutineFilter(e.target.value)}
-            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">All routines</option>
             {routineOptions.map((name) => (
@@ -102,7 +95,7 @@ export default function History() {
           {routineFilter && (
             <button
               onClick={() => setRoutineFilter('')}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+              className="text-xs text-brand-600 hover:text-brand-800 font-medium whitespace-nowrap"
             >
               Clear ×
             </button>
@@ -117,32 +110,15 @@ export default function History() {
       ) : (
         <div className="space-y-3">
           {displayedWorkouts.map((w) => {
-            const isOpen = expanded === w.id
-
-            const byExercise = w.sets.reduce<Record<string, SetRow[]>>((acc, s) => {
-              const name = s.exercise?.name ?? 'Unknown'
-              if (!acc[name]) acc[name] = []
-              acc[name].push(s)
-              return acc
-            }, {})
-
-            const exNotesByName: Record<string, string> = {}
-            w.workout_exercise_notes?.forEach((n) => {
-              const name = n.exercise?.name ?? 'Unknown'
-              exNotesByName[name] = n.notes
-            })
-
-            const exerciseCount = Object.keys(byExercise).length
+            const exerciseCount = new Set(w.sets.map((s) => s.exercise?.name)).size
 
             return (
-              <div
+              <Link
                 key={w.id}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
+                href={`/workouts/${w.id}`}
+                className="block bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
               >
-                <button
-                  onClick={() => setExpanded(isOpen ? null : w.id)}
-                  className="w-full text-left p-4 flex justify-between items-center"
-                >
+                <div className="flex justify-between items-center">
                   <div>
                     <div className="font-semibold text-gray-900 dark:text-white">
                       {w.routine?.name ?? 'Workout'}
@@ -153,61 +129,9 @@ export default function History() {
                       {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
                     </div>
                   </div>
-                  <span className="text-gray-400 dark:text-gray-500 ml-2">{isOpen ? '▲' : '▼'}</span>
-                </button>
-
-                {isOpen && (
-                  <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
-                    {w.notes && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 italic mb-4">
-                        {`"${w.notes}"`}
-                      </p>
-                    )}
-
-                    <div className="space-y-4">
-                      {Object.entries(byExercise).map(([name, sets]) => (
-                        <div key={name}>
-                          <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">{name}</div>
-                          {exNotesByName[name] && (
-                            <p className="text-xs text-gray-400 dark:text-gray-500 italic mb-2">
-                              {exNotesByName[name]}
-                            </p>
-                          )}
-                          <div className="grid grid-cols-3 text-xs text-gray-400 dark:text-gray-500 font-medium mb-1 px-1">
-                            <span>Set</span>
-                            <span>Reps</span>
-                            <span>Weight</span>
-                          </div>
-                          {sets
-                            .sort((a, b) => a.set_number - b.set_number)
-                            .map((s) => (
-                              <div
-                                key={s.id}
-                                className="grid grid-cols-3 text-sm text-gray-700 dark:text-gray-300 px-1 py-0.5"
-                              >
-                                <span>{s.set_number}</span>
-                                <span>{s.reps ?? '—'}</span>
-                                <span>{s.weight != null ? `${s.weight} lbs` : '—'}</span>
-                              </div>
-                            ))}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex gap-4 mt-5">
-                      <Link href={`/log/${w.id}`} className="text-sm text-blue-600 hover:underline">
-                        Edit workout
-                      </Link>
-                      <button
-                        onClick={() => deleteWorkout(w.id)}
-                        className="text-sm text-red-400 hover:text-red-600"
-                      >
-                        Delete workout
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                  <span className="text-gray-300 dark:text-gray-600 ml-2">›</span>
+                </div>
+              </Link>
             )
           })}
         </div>

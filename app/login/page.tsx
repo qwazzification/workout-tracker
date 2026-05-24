@@ -63,7 +63,7 @@ export default function Login() {
                 required
                 autoComplete="email"
                 placeholder="you@example.com"
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
@@ -75,7 +75,7 @@ export default function Login() {
                 required
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder="••••••••"
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
 
@@ -86,7 +86,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white rounded-lg py-2.5 font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="w-full bg-brand-600 text-white rounded-lg py-2.5 font-semibold text-sm hover:bg-brand-700 disabled:opacity-50 transition-colors"
             >
               {loading ? 'Please wait...' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>

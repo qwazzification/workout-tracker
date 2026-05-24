@@ -44,7 +44,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!user) return null
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex min-h-screen items-start bg-gray-50 dark:bg-gray-900">
       <Nav user={user} />
       <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 max-w-3xl w-full">
         {children}

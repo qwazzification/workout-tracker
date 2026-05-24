@@ -57,7 +57,7 @@ export default function WorkoutCalendar({ workouts }: { workouts: WorkoutDay[] }
           const cellClass = isFuture
             ? 'text-gray-100 cursor-default'
             : hasWorkout
-            ? `bg-blue-600 text-white cursor-pointer ${isSelected ? 'ring-2 ring-blue-300 ring-offset-1' : ''}`
+            ? `bg-brand-600 text-white cursor-pointer ${isSelected ? 'ring-2 ring-brand-300 ring-offset-1' : ''}`
             : isToday
             ? 'bg-gray-100 text-gray-600 ring-1 ring-gray-300'
             : 'text-gray-300'
@@ -76,7 +76,7 @@ export default function WorkoutCalendar({ workouts }: { workouts: WorkoutDay[] }
 
       {/* Detail panel shown when a day is selected */}
       {selectedDay && workoutMap.has(selectedDay) && (
-        <div className="mt-3 text-sm bg-blue-50 text-blue-800 rounded-lg px-3 py-2">
+        <div className="mt-3 text-sm bg-brand-50 text-brand-800 rounded-lg px-3 py-2">
           <span className="font-medium">
             {format(parseISO(selectedDay), 'EEEE, MMMM d')}
           </span>
@@ -86,7 +86,7 @@ export default function WorkoutCalendar({ workouts }: { workouts: WorkoutDay[] }
       )}
 
       <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
-        <div className="w-3 h-3 rounded bg-blue-600" />
+        <div className="w-3 h-3 rounded bg-brand-600" />
         <span>Workout logged — tap a day for details</span>
       </div>
     </div>

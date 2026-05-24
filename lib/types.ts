@@ -21,6 +21,9 @@ export interface WorkoutLog {
   date: string
   routine_id: string | null
   notes: string | null
+  started_at: string | null
+  ended_at: string | null
+  duration_seconds: number | null
   created_at: string
   routine?: { name: string } | null
   sets?: WorkoutSet[]

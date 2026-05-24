@@ -9,6 +9,8 @@ interface LiveSet {
   dbId: string | null
   reps: string
   weight: string
+  repsHint: string
+  weightHint: string
   completed: boolean
 }
 
@@ -30,6 +32,14 @@ interface Props {
   onExerciseCreated: (ex: Exercise) => void
 }
 
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export default function WorkoutSheet({
   isOpen,
   workoutId,
@@ -45,6 +55,10 @@ export default function WorkoutSheet({
   const [workoutNotes, setWorkoutNotes] = useState('')
   const [loading, setLoading] = useState(true)
 
+  // Timer
+  const [startedAt, setStartedAt] = useState<Date | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+
   // Add-exercise controls
   const [addExId, setAddExId] = useState('')
   const [creatingNew, setCreatingNew] = useState(false)
@@ -55,6 +69,14 @@ export default function WorkoutSheet({
     if (!workoutId) return
     loadWorkout()
   }, [workoutId])
+
+  useEffect(() => {
+    if (!startedAt) return
+    const tick = () => setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
 
   async function loadWorkout() {
     setLoading(true)
@@ -68,6 +90,15 @@ export default function WorkoutSheet({
     if (!log) { setLoading(false); return }
     setWorkoutDate(log.date)
     setWorkoutNotes(log.notes ?? '')
+
+    // Start timer — persist across re-opens
+    const timerKey = `workout-start-${workoutId}`
+    let startStr = localStorage.getItem(timerKey)
+    if (!startStr) {
+      startStr = new Date().toISOString()
+      localStorage.setItem(timerKey, startStr)
+    }
+    setStartedAt(new Date(startStr))
 
     const [{ data: rawSets }, { data: rawNotes }] = await Promise.all([
       supabase
@@ -96,7 +127,7 @@ export default function WorkoutSheet({
     }[]
 
     if (sets.length > 0) {
-      // Resume: rebuild from saved sets
+      // Resume: show saved values as actual values (already confirmed data)
       const exerciseMap: Record<string, LiveExercise> = {}
       const order: string[] = []
       sets.forEach((s) => {
@@ -113,12 +144,14 @@ export default function WorkoutSheet({
           dbId: s.id,
           reps: s.reps?.toString() ?? '',
           weight: s.weight?.toString() ?? '',
+          repsHint: '',
+          weightHint: '',
           completed: true,
         })
       })
       setLiveExercises(order.map((id) => exerciseMap[id]))
     } else if (log.routine_id) {
-      // Fresh start from routine: pre-populate template
+      // Fresh start from routine: pre-populate as ghost/placeholder values
       const { data: routineEx } = await supabase
         .from('routine_exercises')
         .select('exercise_id, default_sets, default_reps, exercise:exercises(name)')
@@ -148,16 +181,16 @@ export default function WorkoutSheet({
         setLiveExercises(
           rex.map((re, i) => {
             const last = lastSets[i].data
-            const reps = (re.default_reps ?? last?.reps)?.toString() ?? ''
-            const weight = last?.weight?.toString() ?? ''
             return {
               exerciseId: re.exercise_id,
               name: re.exercise?.name ?? 'Unknown',
               notes: '',
               sets: Array.from({ length: re.default_sets }, () => ({
                 dbId: null,
-                reps,
-                weight,
+                reps: '',
+                weight: '',
+                repsHint: (re.default_reps ?? last?.reps)?.toString() ?? '',
+                weightHint: last?.weight?.toString() ?? '',
                 completed: false,
               })),
             }
@@ -172,8 +205,8 @@ export default function WorkoutSheet({
   async function saveSet(exIdx: number, setIdx: number) {
     const entry = liveExercises[exIdx]
     const set = entry.sets[setIdx]
-    const reps = set.reps !== '' ? parseInt(set.reps) : null
-    const weight = set.weight !== '' ? parseFloat(set.weight) : null
+    const reps = set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null)
+    const weight = set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null)
 
     if (set.dbId) {
       await supabase.from('sets').update({ reps, weight }).eq('id', set.dbId)
@@ -208,29 +241,35 @@ export default function WorkoutSheet({
 
   function updateSetField(exIdx: number, setIdx: number, field: 'reps' | 'weight', value: string) {
     setLiveExercises((prev) =>
-      prev.map((e, ei) =>
-        ei !== exIdx
-          ? e
-          : { ...e, sets: e.sets.map((s, si) => (si !== setIdx ? s : { ...s, [field]: value })) }
-      )
+      prev.map((e, ei) => {
+        if (ei !== exIdx) return e
+        return {
+          ...e,
+          sets: e.sets.map((s, si) => {
+            if (si === setIdx) return { ...s, [field]: value }
+            // cascade to sibling set hints when a value is typed
+            if (value !== '') return { ...s, [`${field}Hint`]: value }
+            return s
+          }),
+        }
+      })
     )
   }
 
-function toggleComplete(exIdx: number, setIdx: number) {
-  setLiveExercises((prev) =>
-    prev.map((e, ei) =>
-      ei !== exIdx
-        ? e
-        : { ...e, sets: e.sets.map((s, si) =>
-            si !== setIdx ? s : { ...s, completed: !s.completed }
-          )}
+  function toggleComplete(exIdx: number, setIdx: number) {
+    setLiveExercises((prev) =>
+      prev.map((e, ei) =>
+        ei !== exIdx
+          ? e
+          : { ...e, sets: e.sets.map((s, si) =>
+              si !== setIdx ? s : { ...s, completed: !s.completed }
+            )}
+      )
     )
-  )
-  // Also save the set to DB immediately when checked
-  if (!liveExercises[exIdx].sets[setIdx].completed) {
-    saveSet(exIdx, setIdx)
+    if (!liveExercises[exIdx].sets[setIdx].completed) {
+      saveSet(exIdx, setIdx)
+    }
   }
-}
 
   function addSet(exIdx: number) {
     setLiveExercises((prev) =>
@@ -239,7 +278,17 @@ function toggleComplete(exIdx: number, setIdx: number) {
         const last = e.sets[e.sets.length - 1]
         return {
           ...e,
-          sets: [...e.sets, { dbId: null, reps: last?.reps ?? '', weight: last?.weight ?? '', completed: false }],
+          sets: [
+            ...e.sets,
+            {
+              dbId: null,
+              reps: '',
+              weight: '',
+              repsHint: last?.repsHint || last?.reps || '',
+              weightHint: last?.weightHint || last?.weight || '',
+              completed: false,
+            },
+          ],
         }
       })
     )
@@ -269,14 +318,17 @@ function toggleComplete(exIdx: number, setIdx: number) {
     setLiveExercises((prev) => prev.filter((_, i) => i !== exIdx))
   }
 
-  function moveExercise(exIdx: number, dir: 'up' | 'down') {
+  const [justMoved, setJustMoved] = useState<number | null>(null)
+
+  function swapExercise(fromIdx: number, toIdx: number) {
     setLiveExercises((prev) => {
+      if (toIdx < 0 || toIdx >= prev.length) return prev
       const next = [...prev]
-      const swap = dir === 'up' ? exIdx - 1 : exIdx + 1
-      if (swap < 0 || swap >= next.length) return prev
-      ;[next[exIdx], next[swap]] = [next[swap], next[exIdx]]
+      ;[next[fromIdx], next[toIdx]] = [next[toIdx], next[fromIdx]]
       return next
     })
+    setJustMoved(toIdx)
+    setTimeout(() => setJustMoved(null), 700)
   }
 
   function updateExerciseNotes(exIdx: number, value: string) {
@@ -315,7 +367,7 @@ function toggleComplete(exIdx: number, setIdx: number) {
     if (!ex) return
     setLiveExercises((prev) => [
       ...prev,
-      { exerciseId: ex.id, name: ex.name, notes: '', sets: [{ dbId: null, reps: '', weight: '', completed: false }] },
+      { exerciseId: ex.id, name: ex.name, notes: '', sets: [{ dbId: null, reps: '', weight: '', repsHint: '', weightHint: '', completed: false }] },
     ])
     setAddExId('')
   }
@@ -332,7 +384,7 @@ function toggleComplete(exIdx: number, setIdx: number) {
       onExerciseCreated(data as Exercise)
       setLiveExercises((prev) => [
         ...prev,
-        { exerciseId: data.id, name: data.name, notes: '', sets: [{ dbId: null, reps: '', weight: '', completed: false }] },
+        { exerciseId: data.id, name: data.name, notes: '', sets: [{ dbId: null, reps: '', weight: '', repsHint: '', weightHint: '', completed: false }] },
       ])
       setCreatingNew(false)
       setNewExName('')
@@ -341,13 +393,27 @@ function toggleComplete(exIdx: number, setIdx: number) {
   }
 
   async function finishWorkout() {
-    // Flush any unsaved sets to DB
+    // Save timing
+    const endedAt = new Date()
+    const timerKey = `workout-start-${workoutId}`
+    const startStr = localStorage.getItem(timerKey)
+    const timerStart = startStr ? new Date(startStr) : startedAt
+    const durationSeconds = timerStart
+      ? Math.floor((endedAt.getTime() - timerStart.getTime()) / 1000)
+      : null
+    await supabase.from('workout_logs').update({
+      started_at: timerStart?.toISOString() ?? null,
+      ended_at: endedAt.toISOString(),
+      duration_seconds: durationSeconds,
+    }).eq('id', workoutId)
+
+    // Flush any unsaved sets, using hint as fallback for untyped fields
     const inserts: PromiseLike<unknown>[] = []
     liveExercises.forEach((entry) => {
       entry.sets.forEach((set, setIdx) => {
         if (set.dbId !== null) return
-        const reps = set.reps !== '' ? parseInt(set.reps) : null
-        const weight = set.weight !== '' ? parseFloat(set.weight) : null
+        const reps = set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null)
+        const weight = set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null)
         if (reps === null && weight === null) return
         inserts.push(
           supabase.from('sets').insert({
@@ -361,11 +427,13 @@ function toggleComplete(exIdx: number, setIdx: number) {
       })
     })
     await Promise.all(inserts)
+    localStorage.removeItem(timerKey)
     onFinish()
   }
 
   async function handleDiscard() {
     if (!confirm('Discard this workout? All sets will be deleted.')) return
+    localStorage.removeItem(`workout-start-${workoutId}`)
     onDiscard()
   }
 
@@ -386,14 +454,27 @@ function toggleComplete(exIdx: number, setIdx: number) {
         >
           ← Back
         </button>
-        <div className="flex-1 text-center font-semibold text-gray-900 dark:text-white text-sm">
-          {workoutDate
-            ? format(new Date(workoutDate + 'T00:00:00'), 'EEE, MMM d')
-            : 'Workout'}
+        <div className="flex-1 text-center">
+          <div className="font-semibold text-gray-900 dark:text-white text-sm">
+            {workoutDate
+              ? format(new Date(workoutDate + 'T00:00:00'), 'EEE, MMM d')
+              : 'Workout'}
+          </div>
+          {startedAt && (
+            <div className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+              {formatElapsed(elapsed)}
+            </div>
+          )}
         </div>
         <button
+          onClick={handleDiscard}
+          className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-red-700"
+        >
+          Discard
+        </button>
+        <button
           onClick={finishWorkout}
-          className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-blue-700"
+          className="bg-brand-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-brand-700"
         >
           Finish
         </button>
@@ -406,7 +487,7 @@ function toggleComplete(exIdx: number, setIdx: number) {
             Loading...
           </div>
         ) : (
-          <div className="p-4 pb-32 space-y-4">
+          <div className="p-4 pb-32 space-y-4 max-w-2xl mx-auto">
             {/* Workout notes */}
             <textarea
               value={workoutNotes}
@@ -414,37 +495,33 @@ function toggleComplete(exIdx: number, setIdx: number) {
               onBlur={saveWorkoutNotes}
               rows={2}
               placeholder="Workout notes (optional)..."
-              className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-gray-700 dark:text-gray-300 placeholder-gray-300 dark:placeholder-gray-600 bg-white dark:bg-gray-800"
+              className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none text-gray-700 dark:text-gray-300 placeholder-gray-300 dark:placeholder-gray-600 bg-white dark:bg-gray-800"
             />
 
             {/* Exercise cards */}
             {liveExercises.map((entry, exIdx) => (
               <div
                 key={`${entry.exerciseId}-${exIdx}`}
-                className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700"
+                className={`bg-gray-50 dark:bg-gray-800 rounded-xl p-4 border transition-all duration-300 ${justMoved === exIdx ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300 dark:ring-brand-600' : 'border-gray-100 dark:border-gray-700'}`}
               >
-                {/* Header row */}
                 <div className="flex items-center gap-2 mb-3">
                   <span className="flex-1 font-semibold text-gray-900 dark:text-white text-sm">{entry.name}</span>
-                  <div className="flex flex-col shrink-0">
-                    <button
-                      onClick={() => moveExercise(exIdx, 'up')}
-                      disabled={exIdx === 0}
-                      className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-20 text-xs leading-none py-0.5 px-1"
-                    >▲</button>
-                    <button
-                      onClick={() => moveExercise(exIdx, 'down')}
-                      disabled={exIdx === liveExercises.length - 1}
-                      className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-20 text-xs leading-none py-0.5 px-1"
-                    >▼</button>
-                  </div>
+                  {liveExercises.length > 1 && (
+                    <select
+                      value={exIdx + 1}
+                      onChange={(e) => swapExercise(exIdx, parseInt(e.target.value) - 1)}
+                      className="text-xs border border-gray-300 dark:border-gray-600 rounded-md px-1.5 py-1 w-12 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-500 shrink-0"
+                      title="Move to position"
+                    >
+                      {liveExercises.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+                    </select>
+                  )}
                   <button
                     onClick={() => removeExercise(exIdx)}
                     className="text-red-400 hover:text-red-600 text-xl leading-none shrink-0 px-1"
                   >×</button>
                 </div>
 
-                {/* Set rows */}
                 <div className="grid grid-cols-[2rem_1fr_1fr_2.5rem_2rem] gap-2 mb-2 px-1">
                   <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Set</span>
                   <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Reps</span>
@@ -460,13 +537,13 @@ function toggleComplete(exIdx: number, setIdx: number) {
                     <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
                     <input
                       type="number"
-                      inputMode="decimal"
+                      inputMode="numeric"
                       min="0"
                       value={set.reps}
                       onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
                       onBlur={() => saveSet(exIdx, setIdx)}
-                      placeholder="0"
-                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder={set.repsHint || '0'}
+                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                     />
                     <input
                       type="number"
@@ -476,8 +553,8 @@ function toggleComplete(exIdx: number, setIdx: number) {
                       value={set.weight}
                       onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
                       onBlur={() => saveSet(exIdx, setIdx)}
-                      placeholder="0"
-                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder={set.weightHint || '0'}
+                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                     />
                     <button
                       onClick={() => toggleComplete(exIdx, setIdx)}
@@ -495,19 +572,18 @@ function toggleComplete(exIdx: number, setIdx: number) {
                 ))}
                 <button
                   onClick={() => addSet(exIdx)}
-                  className="text-blue-600 text-sm hover:underline mt-1"
+                  className="text-brand-600 text-sm hover:underline mt-1"
                 >
                   + Add set
                 </button>
 
-                {/* Exercise notes */}
                 <input
                   type="text"
                   value={entry.notes}
                   onChange={(e) => updateExerciseNotes(exIdx, e.target.value)}
                   onBlur={() => saveExerciseNotes(exIdx)}
                   placeholder="Notes..."
-                  className="mt-3 w-full text-xs border-0 border-b border-gray-200 dark:border-gray-700 focus:border-blue-400 bg-transparent py-1 focus:outline-none text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600"
+                  className="mt-3 w-full text-xs border-0 border-b border-gray-200 dark:border-gray-700 focus:border-brand-400 bg-transparent py-1 focus:outline-none text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600"
                 />
               </div>
             ))}
@@ -517,7 +593,7 @@ function toggleComplete(exIdx: number, setIdx: number) {
               <select
                 value={addExId}
                 onChange={(e) => setAddExId(e.target.value)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="">Add exercise...</option>
                 {availableExercises.map((ex) => (
@@ -527,7 +603,7 @@ function toggleComplete(exIdx: number, setIdx: number) {
               {addExId && (
                 <button
                   onClick={handleAddExercise}
-                  className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-blue-700"
+                  className="w-full bg-brand-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-brand-700"
                 >
                   Add to workout
                 </button>
@@ -540,19 +616,19 @@ function toggleComplete(exIdx: number, setIdx: number) {
                     value={newExName}
                     onChange={(e) => setNewExName(e.target.value)}
                     placeholder="Exercise name"
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                   />
                   <div className="flex gap-2">
                     <input
                       value={newExMuscle}
                       onChange={(e) => setNewExMuscle(e.target.value)}
                       placeholder="Muscle group (optional)"
-                      className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                      className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                     />
                     <button
                       onClick={handleCreateExercise}
                       disabled={!newExName.trim()}
-                      className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                      className="bg-brand-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
                     >
                       Create
                     </button>
@@ -567,21 +643,11 @@ function toggleComplete(exIdx: number, setIdx: number) {
               ) : (
                 <button
                   onClick={() => setCreatingNew(true)}
-                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-blue-600"
+                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-brand-600"
                 >
                   + Create new exercise
                 </button>
               )}
-            </div>
-
-            {/* Discard */}
-            <div className="pt-2 text-center">
-              <button
-                onClick={handleDiscard}
-                className="text-sm text-red-400 hover:text-red-600"
-              >
-                Discard workout
-              </button>
             </div>
           </div>
         )}

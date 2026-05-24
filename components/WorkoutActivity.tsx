@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import {
   startOfWeek, subWeeks, subDays, addDays,
   eachDayOfInterval, eachWeekOfInterval,
@@ -11,6 +12,7 @@ import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveCo
 interface WorkoutDay {
   date: string
   routineName: string | null
+  workoutId?: string
 }
 
 export interface FilterRange {
@@ -33,9 +35,12 @@ function parseDate(str: string) {
 export default function WorkoutActivity({
   workouts,
   onFilterChange,
+  dayDetails,
 }: {
   workouts: WorkoutDay[]
   onFilterChange?: (range: FilterRange | null) => void
+  /** Per-date list of exercises done — shown as links when a day is tapped */
+  dayDetails?: Record<string, Array<{ id: string; name: string }>>
 }) {
   const today = startOfDay(new Date())
   const todayStr = format(today, 'yyyy-MM-dd')
@@ -64,8 +69,10 @@ export default function WorkoutActivity({
   }
 
   const workoutMap = useMemo(() => {
-    const map = new Map<string, string | null>()
-    workouts.forEach((w) => { if (!map.has(w.date)) map.set(w.date, w.routineName) })
+    const map = new Map<string, { routineName: string | null; workoutId: string | null }>()
+    workouts.forEach((w) => {
+      if (!map.has(w.date)) map.set(w.date, { routineName: w.routineName, workoutId: w.workoutId ?? null })
+    })
     return map
   }, [workouts])
 
@@ -116,8 +123,8 @@ export default function WorkoutActivity({
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Activity</h2>
-        {hasActiveFilter && (
-          <button onClick={clearSelection} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+        {hasActiveFilter && onFilterChange && (
+          <button onClick={clearSelection} className="text-xs text-brand-600 hover:text-brand-800 font-medium">
             Clear filter ×
           </button>
         )}
@@ -130,7 +137,7 @@ export default function WorkoutActivity({
             key={p.label}
             onClick={() => applyPreset(p.label, p.days)}
             className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              activePreset === p.label ? 'bg-blue-600 text-white' : presetInactive
+              activePreset === p.label ? 'bg-brand-600 text-white' : presetInactive
             }`}
           >
             {p.label}
@@ -143,13 +150,13 @@ export default function WorkoutActivity({
         <input
           type="date" value={fromDate} max={toDate}
           onChange={(e) => { setFromDate(e.target.value); setActivePreset(''); clearSelection() }}
-          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
         <span className="text-xs text-gray-400 dark:text-gray-500">to</span>
         <input
           type="date" value={toDate} min={fromDate} max={todayStr}
           onChange={(e) => { setToDate(e.target.value); setActivePreset(''); clearSelection() }}
-          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
       </div>
 
@@ -171,7 +178,7 @@ export default function WorkoutActivity({
 
               let cellClass: string
               if (!inRange || isFuture) cellClass = 'text-gray-200 dark:text-gray-700 cursor-default'
-              else if (hasWorkout) cellClass = `bg-blue-600 text-white cursor-pointer${isSelected ? ' ring-2 ring-blue-300 ring-offset-1 dark:ring-offset-gray-800' : ''}`
+              else if (hasWorkout) cellClass = `bg-brand-600 text-white cursor-pointer${isSelected ? ' ring-2 ring-brand-300 ring-offset-1 dark:ring-offset-gray-800' : ''}`
               else if (isToday) cellClass = 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-gray-600'
               else cellClass = 'text-gray-300 dark:text-gray-600'
 
@@ -192,19 +199,48 @@ export default function WorkoutActivity({
               )
             })}
           </div>
-          {selectedDay && workoutMap.has(selectedDay) && (
-            <div className="mt-3 text-sm bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-300 rounded-lg px-3 py-2">
-              <span className="font-medium">{format(parseDate(selectedDay), 'EEEE, MMMM d')}</span>
-              {' · '}
-              {workoutMap.get(selectedDay) || 'Workout'}
+
+          {/* Day detail popup */}
+          {selectedDay && workoutMap.has(selectedDay) && (() => {
+            const entry = workoutMap.get(selectedDay)!
+            const label = entry.routineName || 'Workout'
+            return (
+            <div className="mt-3 bg-brand-50 dark:bg-brand-950 rounded-lg px-3 py-2">
+              <div className="text-sm font-medium text-brand-800 dark:text-brand-300">
+                {format(parseDate(selectedDay), 'EEEE, MMMM d')}
+                {' · '}
+                {entry.workoutId ? (
+                  <Link
+                    href={`/workouts/${entry.workoutId}`}
+                    className="underline underline-offset-2 hover:text-brand-600 dark:hover:text-brand-200 transition-colors"
+                  >
+                    {label}
+                  </Link>
+                ) : label}
+              </div>
+              {dayDetails?.[selectedDay] && dayDetails[selectedDay].length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {dayDetails[selectedDay].map((ex) => (
+                    <Link
+                      key={ex.id}
+                      href={`/exercises/${ex.id}`}
+                      className="text-xs bg-brand-100 dark:bg-brand-900/60 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-full hover:bg-brand-200 dark:hover:bg-brand-800 transition-colors"
+                    >
+                      {ex.name}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+            )
+          })()}
+
           <div className="flex items-center gap-2 mt-3 text-xs text-gray-400 dark:text-gray-500">
-            <div className="w-3 h-3 rounded bg-blue-600" />
+            <div className="w-3 h-3 rounded bg-brand-600 shrink-0" />
             <span>
-              {hasActiveFilter
-                ? 'Filtering workouts below · tap again to clear'
-                : 'Tap a workout day to filter below'}
+              {onFilterChange
+                ? (hasActiveFilter ? 'Filtering workouts below · tap again to clear' : 'Tap a workout day to filter below')
+                : 'Tap a workout day for details'}
             </span>
           </div>
         </>
@@ -234,7 +270,7 @@ export default function WorkoutActivity({
                 {chartData.map((entry) => (
                   <Cell
                     key={entry.weekStart}
-                    fill="#2563eb"
+                    fill="#e55422"
                     opacity={selectedWeek && selectedWeek !== entry.weekStart ? 0.35 : 1}
                   />
                 ))}
@@ -242,11 +278,11 @@ export default function WorkoutActivity({
             </BarChart>
           </ResponsiveContainer>
           <div className="flex items-center gap-2 mt-2 text-xs text-gray-400 dark:text-gray-500">
-            <div className="w-3 h-3 rounded bg-blue-600" />
+            <div className="w-3 h-3 rounded bg-brand-600 shrink-0" />
             <span>
-              {hasActiveFilter
-                ? 'Filtering workouts below · tap again to clear'
-                : 'Tap a bar to filter by week'}
+              {onFilterChange
+                ? (hasActiveFilter ? 'Filtering workouts below · tap again to clear' : 'Tap a bar to filter by week')
+                : 'Workout frequency by week'}
             </span>
           </div>
         </>
@@ -256,11 +292,11 @@ export default function WorkoutActivity({
       <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <div className="text-2xl font-bold text-blue-600">{filtered.length}</div>
-            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Total workouts</div>
+            <div className="text-2xl font-bold text-brand-600">{filtered.length}</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Workouts in range</div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-blue-600">{weeklyAvg}</div>
+            <div className="text-2xl font-bold text-brand-600">{weeklyAvg}</div>
             <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Per week avg</div>
           </div>
         </div>
@@ -272,7 +308,7 @@ export default function WorkoutActivity({
                 <span className="text-gray-500 dark:text-gray-400 w-20 shrink-0">{month}</span>
                 <div className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                   <div
-                    className="bg-blue-500 h-full rounded-full"
+                    className="bg-brand-500 h-full rounded-full"
                     style={{ width: `${(count / filtered.length) * 100}%` }}
                   />
                 </div>
