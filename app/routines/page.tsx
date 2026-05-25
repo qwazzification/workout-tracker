@@ -1,52 +1,49 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Routine, Exercise, RoutineExercise } from '@/lib/types'
+import { format } from 'date-fns'
+import type { Routine } from '@/lib/types'
 
-type Tab = 'routines' | 'exercises'
-type RoutineExerciseRow = RoutineExercise & { exercise: Exercise }
+type RoutineExRow = {
+  id: string
+  routine_id: string
+  exercise_id: string
+  default_sets: number
+  default_reps: number | null
+  sort_order: number
+  exercise: { id: string; name: string } | null
+}
 
-export default function Routines() {
-  const [tab, setTab] = useState<Tab>('routines')
-  const [exercises, setExercises] = useState<Exercise[]>([])
+type WorkoutLogRow = {
+  id: string
+  date: string
+  routine_id: string | null
+}
+
+export default function RoutinesPage() {
+  const router = useRouter()
   const [routines, setRoutines] = useState<Routine[]>([])
-  const [routineExercises, setRoutineExercises] = useState<Record<string, RoutineExerciseRow[]>>({})
+  const [routineExercises, setRoutineExercises] = useState<Record<string, RoutineExRow[]>>({})
+  const [workoutLogs, setWorkoutLogs] = useState<WorkoutLogRow[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // New routine form
-  const [newRoutineName, setNewRoutineName] = useState('')
-
-  // Add custom exercise form (Routines tab)
-  const [showAddEx, setShowAddEx] = useState(false)
-  const [newExName, setNewExName] = useState('')
-  const [newExMuscle, setNewExMuscle] = useState('')
-
-  // Add exercise to routine form
-  const [addForm, setAddForm] = useState({ exerciseId: '', sets: '3', reps: '' })
-
-  // Exercise editing state (Exercises tab)
-  const [editingExId, setEditingExId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', muscle_group: '', primary_muscle: '', secondary_muscle: '', notes: '', link: '' })
-
-  const [saving, setSaving] = useState(false)
-
   useEffect(() => {
     async function load() {
-      const [{ data: r }, { data: e }, { data: re }] = await Promise.all([
+      const [{ data: r }, { data: re }, { data: wl }] = await Promise.all([
         supabase.from('routines').select('*').order('name'),
-        supabase.from('exercises').select('*').order('name'),
-        supabase
-          .from('routine_exercises')
-          .select('*, exercise:exercises(*)')
-          .order('sort_order'),
+        supabase.from('routine_exercises').select('*, exercise:exercises(id, name)').order('sort_order'),
+        supabase.from('workout_logs').select('id, date, routine_id').order('date', { ascending: false }),
       ])
-      setRoutines(r || [])
-      setExercises(e || [])
 
-      const grouped: Record<string, RoutineExerciseRow[]> = {}
-      ;((re || []) as unknown as RoutineExerciseRow[]).forEach((item) => {
+      setRoutines((r as Routine[]) || [])
+      setWorkoutLogs((wl as WorkoutLogRow[]) || [])
+
+      const grouped: Record<string, RoutineExRow[]> = {}
+      ;((re || []) as unknown as RoutineExRow[]).forEach((item) => {
         if (!grouped[item.routine_id]) grouped[item.routine_id] = []
         grouped[item.routine_id].push(item)
       })
@@ -56,470 +53,130 @@ export default function Routines() {
     load()
   }, [])
 
-  // ── Routines tab ──────────────────────────────────────────
+  // Per-routine completion stats
+  const routineStats = useMemo(() => {
+    const stats: Record<string, { count: number; lastDate: string | null }> = {}
+    workoutLogs.forEach((w) => {
+      if (!w.routine_id) return
+      if (!stats[w.routine_id]) stats[w.routine_id] = { count: 0, lastDate: null }
+      stats[w.routine_id].count++
+      if (!stats[w.routine_id].lastDate || w.date > stats[w.routine_id].lastDate!) {
+        stats[w.routine_id].lastDate = w.date
+      }
+    })
+    return stats
+  }, [workoutLogs])
 
   function toggleExpand(id: string) {
-    if (expanded === id) { setExpanded(null); return }
-    setExpanded(id)
-    setAddForm({ exerciseId: '', sets: '3', reps: '' })
+    setExpanded((prev) => (prev === id ? null : id))
   }
-
-  async function addRoutine() {
-    const name = newRoutineName.trim()
-    if (!name) return
-    setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase.from('routines').insert({ name, user_id: user!.id }).select().single()
-    if (data) {
-      setRoutines((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
-      setRoutineExercises((prev) => ({ ...prev, [data.id]: [] }))
-      setNewRoutineName('')
-    }
-    setSaving(false)
-  }
-
-  async function deleteRoutine(id: string) {
-    if (!confirm('Delete this routine? Workouts using it will keep their data.')) return
-    await supabase.from('routines').delete().eq('id', id)
-    setRoutines((prev) => prev.filter((r) => r.id !== id))
-    if (expanded === id) setExpanded(null)
-  }
-
-  async function addExerciseToLibrary() {
-    const name = newExName.trim()
-    if (!name) return
-    setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase
-      .from('exercises')
-      .insert({ name, muscle_group: newExMuscle.trim() || null, user_id: user!.id })
-      .select()
-      .single()
-    if (data) {
-      setExercises((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
-      setNewExName('')
-      setNewExMuscle('')
-      setShowAddEx(false)
-    }
-    setSaving(false)
-  }
-
-  async function addExerciseToRoutine(routineId: string) {
-    if (!addForm.exerciseId) return
-    const current = routineExercises[routineId] || []
-    const { data } = await supabase
-      .from('routine_exercises')
-      .insert({
-        routine_id: routineId,
-        exercise_id: addForm.exerciseId,
-        default_sets: Math.max(1, parseInt(addForm.sets) || 3),
-        default_reps: addForm.reps ? parseInt(addForm.reps) : null,
-        sort_order: current.length,
-      })
-      .select('*, exercise:exercises(*)')
-      .single()
-
-    if (data) {
-      setRoutineExercises((prev) => ({
-        ...prev,
-        [routineId]: [...(prev[routineId] || []), data as unknown as RoutineExerciseRow],
-      }))
-      setAddForm({ exerciseId: '', sets: '3', reps: '' })
-    }
-  }
-
-  async function moveRoutineExercise(routineId: string, idx: number, dir: 'up' | 'down') {
-    const current = routineExercises[routineId] || []
-    const swapIdx = dir === 'up' ? idx - 1 : idx + 1
-    if (swapIdx < 0 || swapIdx >= current.length) return
-    const newOrder = [...current]
-    ;[newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]]
-    setRoutineExercises((prev) => ({ ...prev, [routineId]: newOrder }))
-    await Promise.all(
-      newOrder.map((re, i) =>
-        supabase.from('routine_exercises').update({ sort_order: i }).eq('id', re.id)
-      )
-    )
-  }
-
-  async function removeExerciseFromRoutine(reId: string, routineId: string) {
-    await supabase.from('routine_exercises').delete().eq('id', reId)
-    setRoutineExercises((prev) => ({
-      ...prev,
-      [routineId]: prev[routineId].filter((re) => re.id !== reId),
-    }))
-  }
-
-  // ── Exercises tab ─────────────────────────────────────────
-
-  function startEditExercise(ex: Exercise) {
-    setEditingExId(ex.id)
-    setEditForm({
-      name: ex.name,
-      muscle_group: ex.muscle_group ?? '',
-      primary_muscle: ex.primary_muscle ?? '',
-      secondary_muscle: ex.secondary_muscle ?? '',
-      notes: ex.notes ?? '',
-      link: ex.link ?? '',
-    })
-  }
-
-  async function saveExercise() {
-    if (!editingExId || !editForm.name.trim()) return
-    setSaving(true)
-    const { data } = await supabase
-      .from('exercises')
-      .update({
-        name: editForm.name.trim(),
-        muscle_group: editForm.muscle_group.trim() || null,
-        primary_muscle: editForm.primary_muscle.trim() || null,
-        secondary_muscle: editForm.secondary_muscle.trim() || null,
-        notes: editForm.notes.trim() || null,
-        link: editForm.link.trim() || null,
-      })
-      .eq('id', editingExId)
-      .select()
-      .single()
-    if (data) {
-      setExercises((prev) =>
-        prev.map((e) => (e.id === editingExId ? (data as Exercise) : e))
-          .sort((a, b) => a.name.localeCompare(b.name))
-      )
-      setEditingExId(null)
-    }
-    setSaving(false)
-  }
-
-  async function deleteExercise(id: string) {
-    if (!confirm('Delete this exercise? This will fail if it has been used in any logged workouts.')) return
-    const { error } = await supabase.from('exercises').delete().eq('id', id)
-    if (error) { alert('Cannot delete: ' + error.message); return }
-    setExercises((prev) => prev.filter((e) => e.id !== id))
-    if (editingExId === id) setEditingExId(null)
-  }
-
-  // Group exercises by muscle group for the Exercises tab
-  const exercisesByGroup = exercises.reduce<Record<string, Exercise[]>>((acc, ex) => {
-    const group = ex.muscle_group || 'Other'
-    if (!acc[group]) acc[group] = []
-    acc[group].push(ex)
-    return acc
-  }, {})
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Routines</h1>
-
-      {/* Tab toggle */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">
-        {(['routines', 'exercises'] as Tab[]).map((t) => (
+    <div className="max-w-2xl mx-auto">
+      {/* Header */}
+      <div className="grid grid-cols-2 items-center w-full">
+        <div className="justify-self-start">
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors capitalize ${
-              tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
+            onClick={() => router.back()}
+            className="flex items-center gap-2 h-6 px-3 rounded-lg bg-gray-800 border border-gray-500 text-gray-400 dark:text-gray-500 hover:text-gray-300 text-xs shrink-0 transition-colors"
           >
-            {t}
+            <span>←</span> Back
           </button>
-        ))}
+        </div>
+        <div className="justify-self-end">
+          <Link
+            href="/routines/new"
+            className="flex items-center gap-1.5 h-6 px-3 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 transition-colors"
+          >
+            + New Routine
+          </Link>
+        </div>
       </div>
 
+      <h1 className="flex justify-start my-4 text-xl font-bold text-gray-900 dark:text-white">
+        Routines
+      </h1>
+
       {loading ? (
-        <div className="text-gray-400 text-sm">Loading...</div>
-      ) : tab === 'routines' ? (
+        <div className="text-gray-400 dark:text-gray-500 text-sm">Loading...</div>
+      ) : routines.length === 0 ? (
+        <div className="text-center text-gray-400 dark:text-gray-500 py-16 text-sm">
+          <p className="mb-3">No routines yet.</p>
+          <Link href="/routines/new" className="text-brand-600 font-medium hover:underline">
+            Create your first routine →
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {routines.map((routine) => {
+            const rExercises = routineExercises[routine.id] || []
+            const stats = routineStats[routine.id] ?? { count: 0, lastDate: null }
+            const isOpen = expanded === routine.id
 
-        /* ── ROUTINES TAB ── */
-        <>
-          {/* Add custom exercise */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-4 overflow-hidden">
-            <button
-              onClick={() => setShowAddEx(!showAddEx)}
-              className="w-full flex justify-between items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              <span>+ Add custom exercise to library</span>
-              <span className="text-gray-400 text-xs">{showAddEx ? '▲' : '▼'}</span>
-            </button>
-            {showAddEx && (
-              <div className="px-4 pb-4 border-t border-gray-100 pt-3 space-y-2">
-                <input
-                  value={newExName}
-                  onChange={(e) => setNewExName(e.target.value)}
-                  placeholder="Exercise name"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                <div className="flex gap-2">
-                  <input
-                    value={newExMuscle}
-                    onChange={(e) => setNewExMuscle(e.target.value)}
-                    placeholder="Muscle group (optional)"
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
+            return (
+              <div key={routine.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                {/* Card header */}
+                <div className="flex items-center px-4 py-3 gap-2">
+                  <Link href={`/routines/${routine.id}`} className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition-colors truncate">
+                      {routine.name}
+                    </div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 flex gap-2 flex-wrap">
+                      <span>{rExercises.length} exercise{rExercises.length !== 1 ? 's' : ''}</span>
+                      <span>·</span>
+                      <span>Done {stats.count} time{stats.count !== 1 ? 's' : ''}</span>
+                      {stats.lastDate && (
+                        <>
+                          <span>·</span>
+                          <span>Last: {format(new Date(stats.lastDate + 'T00:00:00'), 'MMM d, yyyy')}</span>
+                        </>
+                      )}
+                    </div>
+                  </Link>
                   <button
-                    onClick={addExerciseToLibrary}
-                    disabled={saving || !newExName.trim()}
-                    className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
-                  >Add</button>
+                    onClick={() => toggleExpand(routine.id)}
+                    className="shrink-0 p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors text-xs"
+                  >
+                    {isOpen ? '▲' : '▼'}
+                  </button>
                 </div>
-              </div>
-            )}
-          </div>
 
-          {/* Create new routine */}
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
-            <div className="flex gap-2">
-              <input
-                value={newRoutineName}
-                onChange={(e) => setNewRoutineName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addRoutine()}
-                placeholder="New routine name (e.g. Push Day)"
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-              <button
-                onClick={addRoutine}
-                disabled={saving || !newRoutineName.trim()}
-                className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
-              >Add</button>
-            </div>
-          </div>
-
-          {routines.length === 0 ? (
-            <div className="text-center text-gray-400 py-12 text-sm">No routines yet.</div>
-          ) : (
-            <div className="space-y-3">
-              {routines.map((routine) => {
-                const isOpen = expanded === routine.id
-                const rExercises = routineExercises[routine.id] || []
-                const alreadyAdded = new Set(rExercises.map((re) => re.exercise_id))
-
-                return (
-                  <div key={routine.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <button
-                      onClick={() => toggleExpand(routine.id)}
-                      className="w-full text-left px-4 py-3 flex justify-between items-center"
-                    >
-                      <div>
-                        <span className="font-semibold text-gray-900">{routine.name}</span>
-                        <span className="text-xs text-gray-400 ml-2">
-                          {rExercises.length} exercise{rExercises.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
-                    </button>
-
-                    {isOpen && (
-                      <div className="border-t border-gray-100 px-4 pb-4 pt-3">
-                        {rExercises.length === 0 ? (
-                          <p className="text-sm text-gray-400 mb-4">No exercises yet.</p>
-                        ) : (
-                          <div className="mb-4 space-y-2">
-                            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] text-xs text-gray-400 font-medium px-1 mb-1 gap-2">
-                              <span>Exercise</span>
-                              <span>Sets</span>
-                              <span>Reps</span>
-                              <span />
-                              <span />
-                            </div>
-                            {rExercises.map((re, idx) => (
-                              <div key={re.id} className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center text-sm px-1 gap-2">
-                                <span className="text-gray-800 truncate">{re.exercise.name}</span>
-                                <span className="text-gray-500">{re.default_sets}</span>
-                                <span className="text-gray-500">{re.default_reps ?? '—'}</span>
-                                <div className="flex flex-col items-center">
-                                  <button
-                                    onClick={() => moveRoutineExercise(routine.id, idx, 'up')}
-                                    disabled={idx === 0}
-                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-xs leading-none py-0.5"
-                                  >▲</button>
-                                  <button
-                                    onClick={() => moveRoutineExercise(routine.id, idx, 'down')}
-                                    disabled={idx === rExercises.length - 1}
-                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-xs leading-none py-0.5"
-                                  >▼</button>
-                                </div>
-                                <button
-                                  onClick={() => removeExerciseFromRoutine(re.id, routine.id)}
-                                  className="text-red-400 hover:text-red-600 text-lg leading-none"
-                                >×</button>
-                              </div>
-                            ))}
+                {/* Expanded exercise list */}
+                {isOpen && (
+                  <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-3">
+                    {rExercises.length === 0 ? (
+                      <p className="text-sm text-gray-400 dark:text-gray-500">No exercises in this routine.</p>
+                    ) : (
+                      <div className="space-y-1.5 mb-3">
+                        {rExercises.map((re, idx) => (
+                          <div key={re.id} className="flex items-center gap-2 text-sm">
+                            <span className="text-xs text-gray-400 dark:text-gray-500 w-4 text-center shrink-0">{idx + 1}</span>
+                            <Link
+                              href={`/exercises/${re.exercise?.id}`}
+                              className="flex-1 text-gray-800 dark:text-gray-200 hover:text-brand-600 dark:hover:text-brand-400 transition-colors truncate"
+                            >
+                              {re.exercise?.name ?? 'Unknown'}
+                            </Link>
+                            <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
+                              {re.default_sets} × {re.default_reps ?? '—'}
+                            </span>
                           </div>
-                        )}
-
-                        {/* Add exercise to routine */}
-                        <div className="space-y-2">
-                          <select
-                            value={addForm.exerciseId}
-                            onChange={(e) => setAddForm((p) => ({ ...p, exerciseId: e.target.value }))}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                          >
-                            <option value="">Add exercise...</option>
-                            {exercises
-                              .filter((ex) => !alreadyAdded.has(ex.id))
-                              .map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
-                          </select>
-                          <div className="flex gap-2 items-center">
-                            <input
-                              type="number" min="1" max="20" value={addForm.sets}
-                              onChange={(e) => setAddForm((p) => ({ ...p, sets: e.target.value }))}
-                              title="Default sets"
-                              placeholder="Sets"
-                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-500"
-                            />
-                            <input
-                              type="number" min="1" max="100" value={addForm.reps}
-                              onChange={(e) => setAddForm((p) => ({ ...p, reps: e.target.value }))}
-                              title="Default reps"
-                              placeholder="Reps"
-                              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-500"
-                            />
-                            <button
-                              onClick={() => addExerciseToRoutine(routine.id)}
-                              disabled={!addForm.exerciseId}
-                              className="shrink-0 bg-brand-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
-                            >Add</button>
-                          </div>
-                          <p className="text-xs text-gray-400 pl-1">
-                            Sets · Reps = defaults pre-filled when loading template
-                          </p>
-                        </div>
-
-                        <button
-                          onClick={() => deleteRoutine(routine.id)}
-                          className="mt-4 text-sm text-red-400 hover:text-red-600"
-                        >Delete routine</button>
+                        ))}
                       </div>
                     )}
+                    <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                      <Link
+                        href={`/routines/${routine.id}`}
+                        className="text-sm text-brand-600 dark:text-brand-400 font-medium hover:underline"
+                      >
+                        View stats &amp; edit →
+                      </Link>
+                    </div>
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </>
-
-      ) : (
-
-        /* ── EXERCISES TAB ── */
-        <div>
-          {Object.keys(exercisesByGroup).length === 0 ? (
-            <div className="text-center text-gray-400 py-12 text-sm">No exercises yet.</div>
-          ) : (
-            Object.entries(exercisesByGroup)
-              .sort(([a], [b]) => a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b))
-              .map(([group, exes]) => (
-                <div key={group} className="mb-6">
-                  <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">
-                    {group}
-                  </h2>
-                  <div className="space-y-2">
-                    {exes.map((ex) => {
-                      const isCustom = ex.user_id !== null
-                      return (
-                      <div key={ex.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                        <button
-                          onClick={() => {
-                            if (!isCustom) return
-                            editingExId === ex.id ? setEditingExId(null) : startEditExercise(ex)
-                          }}
-                          className={`w-full text-left px-4 py-3 flex justify-between items-center ${!isCustom ? 'cursor-default' : ''}`}
-                        >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-900">{ex.name}</span>
-                              {isCustom && (
-                                <span className="text-xs bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-medium">Custom</span>
-                              )}
-                            </div>
-                            {ex.notes && (
-                              <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">{ex.notes}</p>
-                            )}
-                          </div>
-                          {isCustom && (
-                            <span className="text-gray-400 text-xs ml-2">{editingExId === ex.id ? '▲' : '▼'}</span>
-                          )}
-                        </button>
-
-                        {isCustom && editingExId === ex.id && (
-                          <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-3">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
-                              <input
-                                value={editForm.name}
-                                onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Muscle Group</label>
-                              <input
-                                value={editForm.muscle_group}
-                                onChange={(e) => setEditForm((p) => ({ ...p, muscle_group: e.target.value }))}
-                                placeholder="e.g. Chest, Back, Legs..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Primary muscle</label>
-                              <input
-                                value={editForm.primary_muscle}
-                                onChange={(e) => setEditForm((p) => ({ ...p, primary_muscle: e.target.value }))}
-                                placeholder="e.g. Triceps, Shoulders..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Secondary muscles</label>
-                              <input
-                                value={editForm.secondary_muscle}
-                                onChange={(e) => setEditForm((p) => ({ ...p, secondary_muscle: e.target.value }))}
-                                placeholder="e.g. Triceps, Shoulders..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-                              <textarea
-                                value={editForm.notes}
-                                onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))}
-                                rows={3}
-                                placeholder="Form cues, tips, reminders..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Link (optional)</label>
-                              <input
-                                type="url"
-                                value={editForm.link}
-                                onChange={(e) => setEditForm((p) => ({ ...p, link: e.target.value }))}
-                                placeholder="https://..."
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
-                              />
-                            </div>
-                            <div className="flex gap-3 pt-1">
-                              <button
-                                onClick={saveExercise}
-                                disabled={saving || !editForm.name.trim()}
-                                className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
-                              >Save</button>
-                              <button
-                                onClick={() => setEditingExId(null)}
-                                className="text-gray-500 text-sm hover:text-gray-700 px-2"
-                              >Cancel</button>
-                              <button
-                                onClick={() => deleteExercise(ex.id)}
-                                className="ml-auto text-sm text-red-400 hover:text-red-600"
-                              >Delete</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                    })}
-                  </div>
-                </div>
-              ))
-          )}
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

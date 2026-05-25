@@ -19,6 +19,7 @@ export interface Exercise {
 export interface WorkoutLog {
   id: string
   date: string
+  name: string | null
   routine_id: string | null
   notes: string | null
   started_at: string | null

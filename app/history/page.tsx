@@ -23,6 +23,7 @@ interface ExerciseNote {
 interface WorkoutEntry {
   id: string
   date: string
+  name: string | null
   notes: string | null
   routine: { name: string } | null
   sets: SetRow[]
@@ -39,7 +40,7 @@ export default function History() {
     supabase
       .from('workout_logs')
       .select(`
-        id, date, notes,
+        id, date, name, notes,
         routine:routines(name),
         sets(id, set_number, reps, weight, exercise:exercises(name)),
         workout_exercise_notes(exercise_id, notes, exercise:exercises(name))
@@ -68,6 +69,7 @@ export default function History() {
 
   const activityData = workouts.map((w) => ({
     date: w.date,
+    name: w.name,
     routineName: w.routine?.name ?? null,
     workoutId: w.id,
   }))
@@ -121,7 +123,7 @@ export default function History() {
                 <div className="flex justify-between items-center">
                   <div>
                     <div className="font-semibold text-gray-900 dark:text-white">
-                      {w.routine?.name ?? 'Workout'}
+                      {w.name ?? w.routine?.name ?? 'Workout'}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                       {format(new Date(w.date + 'T00:00:00'), 'EEEE, MMMM d, yyyy')}

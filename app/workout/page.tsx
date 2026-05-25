@@ -68,9 +68,10 @@ export default function WorkoutPage() {
   async function startWorkout(routineId?: string) {
     if (activeWorkoutId) return
     const today = format(new Date(), 'yyyy-MM-dd')
+    const routineName = routineId ? (routines.find((r) => r.id === routineId)?.name ?? null) : null
     const { data } = await supabase
       .from('workout_logs')
-      .insert({ date: today, routine_id: routineId ?? null, user_id: userId })
+      .insert({ date: today, name: routineName, routine_id: routineId ?? null, user_id: userId })
       .select().single()
     if (!data) return
     localStorage.setItem('activeWorkoutId', data.id)
@@ -148,23 +149,26 @@ export default function WorkoutPage() {
               <div key={routine.id} className={`${cardClass} overflow-hidden`}>
                 {/* Card header */}
                 <div className="flex items-center gap-3 px-4 py-3">
-                  <button
-                    onClick={() => setExpanded(isOpen ? null : routine.id)}
-                    className="flex-1 text-left min-w-0"
-                  >
-                    <div className="font-semibold text-gray-900 dark:text-white">{routine.name}</div>
+                  <div className="flex-1 min-w-0">
+                    <Link
+                      href={`/routines/${routine.id}`}
+                      className="font-semibold text-gray-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+                    >
+                      {routine.name}
+                    </Link>
                     <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">
                       {rExercises.length === 0
                         ? 'No exercises'
                         : `${preview}${rExercises.length > 3 ? ` +${rExercises.length - 3} more` : ''}`}
                     </div>
-                  </button>
-                  <Link
-                    href={`/routines/${routine.id}`}
-                    className="shrink-0 text-sm text-gray-400 dark:text-gray-500 hover:text-brand-600 px-2"
+                  </div>
+                  <button
+                    onClick={() => setExpanded(isOpen ? null : routine.id)}
+                    className="shrink-0 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-1.5 py-1 rounded transition-colors"
+                    title={isOpen ? 'Collapse' : 'Expand'}
                   >
-                    Edit
-                  </Link>
+                    <span className="text-xs">{isOpen ? '▲' : '▼'}</span>
+                  </button>
                   <button
                     onClick={() => startWorkout(routine.id)}
                     disabled={!!activeWorkoutId}
@@ -203,12 +207,20 @@ export default function WorkoutPage() {
                         ))}
                       </div>
                     )}
-                    <button
-                      onClick={() => deleteRoutine(routine.id)}
-                      className="text-sm text-red-400 hover:text-red-600"
-                    >
-                      Delete routine
-                    </button>
+                    <div className="flex items-center gap-4">
+                      <Link
+                        href={`/routines/${routine.id}`}
+                        className="text-sm text-brand-600 hover:text-brand-800 font-medium"
+                      >
+                        Edit routine →
+                      </Link>
+                      <button
+                        onClick={() => deleteRoutine(routine.id)}
+                        className="text-sm text-red-400 hover:text-red-600"
+                      >
+                        Delete routine
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

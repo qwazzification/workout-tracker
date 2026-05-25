@@ -19,6 +19,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setLoading(false)
       if (!u && pathname !== '/login') router.replace('/login')
       if (u && pathname === '/login') router.replace('/')
+      // Keep public profile in sync so the user is discoverable by friends
+      if (u) {
+        supabase.from('profiles').upsert(
+          { id: u.id, email: u.email ?? null, display_name: u.user_metadata?.display_name ?? null },
+          { onConflict: 'id' }
+        ).then(() => {})
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

@@ -1,76 +1,131 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { format, startOfWeek } from 'date-fns'
 
-interface SetRow {
-  id: string
-  set_number: number
-  reps: number | null
-  weight: number | null
-  exercise: { id: string; name: string } | null
-}
+type Profile = { id: string; display_name: string | null; email: string | null }
 
-interface LastWorkout {
+type FeedWorkout = {
   id: string
   date: string
+  name: string | null
   notes: string | null
+  is_public: boolean
+  user_id: string
   routine: { name: string } | null
-  sets: SetRow[]
+  sets: { exercise: { id: string; name: string } | null }[]
+}
+
+function dedupeExercises(sets: FeedWorkout['sets']): string[] {
+  const seen = new Set<string>()
+  const names: string[] = []
+  sets.forEach((s) => {
+    if (s.exercise && !seen.has(s.exercise.id)) {
+      seen.add(s.exercise.id)
+      names.push(s.exercise.name)
+    }
+  })
+  return names
 }
 
 export default function FeedPage() {
-  const [lastWorkout, setLastWorkout] = useState<LastWorkout | null>(null)
+  const [myId, setMyId] = useState<string | null>(null)
+  const [myInitial, setMyInitial] = useState('?')
   const [weekCount, setWeekCount] = useState(0)
+  const [feedWorkouts, setFeedWorkouts] = useState<FeedWorkout[]>([])
+  const [profiles, setProfiles] = useState<Record<string, Profile>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setMyId(user.id)
+      const meta = user.user_metadata ?? {}
+      const name = (meta.display_name as string | undefined) || user.email?.split('@')[0] || '?'
+      setMyInitial(name[0].toUpperCase())
+
       const weekStart = format(startOfWeek(new Date()), 'yyyy-MM-dd')
 
-      const [{ data: recent }, { count }] = await Promise.all([
+      // Accepted friend IDs
+      const { data: friendships } = await supabase
+        .from('friendships')
+        .select('requester_id, addressee_id')
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+
+      const friendIds = (friendships ?? []).map((f) =>
+        f.requester_id === user.id ? f.addressee_id : f.requester_id
+      )
+
+      // Fetch own + friends' workouts in parallel
+      const FIELDS = 'id, date, name, notes, is_public, user_id, routine:routines(name), sets(exercise:exercises(id, name))'
+
+      const [{ data: ownData }, friendResult, { count }] = await Promise.all([
         supabase
           .from('workout_logs')
-          .select('id, date, notes, routine:routines(name), sets(id, set_number, reps, weight, exercise:exercises(id, name))')
+          .select(FIELDS)
+          .eq('user_id', user.id)
           .order('date', { ascending: false })
-          .limit(1),
+          .limit(20),
+        friendIds.length > 0
+          ? supabase
+              .from('workout_logs')
+              .select(FIELDS)
+              .in('user_id', friendIds)
+              .eq('is_public', true)
+              .order('date', { ascending: false })
+              .limit(20)
+          : Promise.resolve({ data: [] }),
         supabase
           .from('workout_logs')
           .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
           .gte('date', weekStart),
       ])
 
-      const rows = (recent as unknown as LastWorkout[]) || []
-      setLastWorkout(rows[0] ?? null)
       setWeekCount(count ?? 0)
+
+      const all = [
+        ...((ownData as unknown as FeedWorkout[]) ?? []),
+        ...((friendResult.data as unknown as FeedWorkout[]) ?? []),
+      ]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 30)
+
+      setFeedWorkouts(all)
+
+      // Load profiles for any friend authors in the feed
+      const authorIds = [...new Set(all.map((w) => w.user_id).filter((id) => id !== user.id))]
+      if (authorIds.length > 0) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('id, display_name, email')
+          .in('id', authorIds)
+        const map: Record<string, Profile> = {}
+        ;((profileData as Profile[]) ?? []).forEach((p) => { map[p.id] = p })
+        setProfiles(map)
+      }
+
       setLoading(false)
     }
     load()
   }, [])
 
-  // Group sets by exercise, preserving insertion order
-  const exerciseGroups = useMemo(() => {
-    if (!lastWorkout) return []
-    const order: string[] = []
-    const groups = new Map<string, { id: string; name: string; sets: SetRow[] }>()
-    lastWorkout.sets.forEach((s) => {
-      const id = s.exercise?.id ?? 'unknown'
-      const name = s.exercise?.name ?? 'Unknown'
-      if (!groups.has(id)) {
-        order.push(id)
-        groups.set(id, { id, name, sets: [] })
-      }
-      groups.get(id)!.sets.push(s)
-    })
-    return order.map((id) => groups.get(id)!)
-  }, [lastWorkout])
+  function getWorkoutName(w: FeedWorkout) {
+    return w.name ?? (w.routine as { name: string } | null)?.name ?? 'Workout'
+  }
 
-  const totalVolume = useMemo(() => {
-    if (!lastWorkout) return 0
-    return lastWorkout.sets.reduce((sum, s) => sum + (s.weight ?? 0) * (s.reps ?? 0), 0)
-  }, [lastWorkout])
+  function getAuthorName(userId: string) {
+    const p = profiles[userId]
+    return p?.display_name || p?.email?.split('@')[0] || 'Friend'
+  }
+
+  function getAuthorInitial(userId: string) {
+    return getAuthorName(userId)[0].toUpperCase()
+  }
 
   return (
     <div>
@@ -91,86 +146,93 @@ export default function FeedPage() {
         </Link>
       </div>
 
-      <h2 className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-3">Last Workout</h2>
-
+      {/* Feed */}
       {loading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading...</div>
-      ) : !lastWorkout ? (
+      ) : feedWorkouts.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-xl p-8 text-center border border-gray-100 dark:border-gray-700">
-          <p className="text-gray-400 dark:text-gray-500 mb-3">No workouts logged yet.</p>
+          <p className="text-gray-400 dark:text-gray-500 mb-3">No workouts yet. Log one or add some friends!</p>
           <Link href="/workout" className="text-brand-600 text-sm font-medium hover:underline">
             Start your first workout →
           </Link>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-          {/* Workout header */}
-          <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-            <div>
-              <div className="font-semibold text-gray-900 dark:text-white">
-                {lastWorkout.routine?.name ?? 'Workout'}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                {format(new Date(lastWorkout.date + 'T00:00:00'), 'EEEE, MMMM d, yyyy')}
-              </div>
-            </div>
-            <Link
-              href={`/workouts/${lastWorkout.id}`}
-              className="text-xs text-brand-600 hover:text-brand-800 font-medium shrink-0 ml-3"
-            >
-              View →
-            </Link>
-          </div>
+        <div className="space-y-4">
+          {feedWorkouts.map((w) => {
+            const isOwn = w.user_id === myId
+            const exercises = dedupeExercises(w.sets)
 
-          {/* Notes */}
-          {lastWorkout.notes && (
-            <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 italic">
-              {lastWorkout.notes}
-            </div>
-          )}
+            return (
+              <div
+                key={w.id}
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
+              >
+                {/* Author row */}
+                <div className="flex items-center gap-2.5 px-4 pt-3 pb-2 border-b border-gray-50 dark:border-gray-700/50">
+                  {isOwn ? (
+                    <Link
+                      href="/progress"
+                      className="w-7 h-7 rounded-full bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center shrink-0"
+                    >
+                      <span className="text-xs font-bold text-brand-600 dark:text-brand-400">{myInitial}</span>
+                    </Link>
+                  ) : (
+                    <Link
+                      href={`/profile/${w.user_id}`}
+                      className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0"
+                    >
+                      <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{getAuthorInitial(w.user_id)}</span>
+                    </Link>
+                  )}
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 flex-1 min-w-0 truncate">
+                    {isOwn ? 'You' : (
+                      <Link href={`/profile/${w.user_id}`} className="hover:text-brand-400 transition-colors">
+                        {getAuthorName(w.user_id)}
+                      </Link>
+                    )}
+                  </span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
+                    {format(new Date(w.date + 'T00:00:00'), 'MMM d')}
+                  </span>
+                  {isOwn && !w.is_public && (
+                    <span className="text-xs text-gray-500 dark:text-gray-600 shrink-0" title="Private">🔒</span>
+                  )}
+                </div>
 
-          {/* Exercises */}
-          <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            {exerciseGroups.map((group) => (
-              <div key={group.id} className="p-4">
-                <Link
-                  href={`/exercises/${group.id}`}
-                  className="text-sm font-medium text-gray-800 dark:text-gray-100 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
-                >
-                  {group.name}
-                </Link>
-                <div className="mt-2 space-y-1">
-                  {group.sets
-                    .slice()
-                    .sort((a, b) => a.set_number - b.set_number)
-                    .map((s) => (
-                      <div key={s.id} className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
-                        <span className="text-xs text-gray-400 dark:text-gray-500 w-10 shrink-0">
-                          Set {s.set_number}
+                {/* Workout body */}
+                <div className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="font-semibold text-gray-900 dark:text-white text-sm leading-snug">
+                      {getWorkoutName(w)}
+                    </div>
+                    {isOwn && (
+                      <Link
+                        href={`/workouts/${w.id}`}
+                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-400 font-medium shrink-0 ml-2 transition-colors"
+                      >
+                        View →
+                      </Link>
+                    )}
+                  </div>
+                  {w.notes && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 italic mb-2">{`"${w.notes}"`}</p>
+                  )}
+                  {exercises.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {exercises.map((ex) => (
+                        <span
+                          key={ex}
+                          className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full"
+                        >
+                          {ex}
                         </span>
-                        <span>
-                          {s.reps != null ? `${s.reps} reps` : '—'}
-                          {s.weight != null ? ` × ${s.weight} lbs` : ''}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Footer stats */}
-          <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
-            <span>{exerciseGroups.length} exercise{exerciseGroups.length !== 1 ? 's' : ''}</span>
-            <span>·</span>
-            <span>{lastWorkout.sets.length} set{lastWorkout.sets.length !== 1 ? 's' : ''}</span>
-            {totalVolume > 0 && (
-              <>
-                <span>·</span>
-                <span>{totalVolume.toLocaleString()} lbs volume</span>
-              </>
-            )}
-          </div>
+            )
+          })}
         </div>
       )}
     </div>

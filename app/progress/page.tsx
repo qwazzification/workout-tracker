@@ -26,7 +26,7 @@ type RawSet = {
   workout_log: { date: string } | null
 }
 
-type CalendarWorkout = { date: string; routineName: string | null; workoutId: string }
+type CalendarWorkout = { date: string; name: string | null; routineName: string | null; workoutId: string }
 
 function formatVolume(v: number): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
@@ -53,13 +53,14 @@ export default function ProfilePage() {
     // Workout list for calendar — also drives totalWorkouts count
     supabase
       .from('workout_logs')
-      .select('id, date, routine:routines(name)')
+      .select('id, date, name, routine:routines(name)')
       .order('date', { ascending: false })
       .then(({ data }) => {
         setTotalWorkouts(data?.length ?? 0)
         setCalendarWorkouts(
-          ((data ?? []) as unknown as { id: string; date: string; routine: { name: string } | null }[]).map((w) => ({
+          ((data ?? []) as unknown as { id: string; date: string; name: string | null; routine: { name: string } | null }[]).map((w) => ({
             date: w.date,
+            name: w.name,
             workoutId: w.id,
             routineName: w.routine?.name ?? null,
           }))
@@ -128,6 +129,23 @@ export default function ProfilePage() {
       result[date] = Array.from(map.values())
     })
     return result
+  }, [allSets])
+
+  const mostDoneExercises = useMemo(() => {
+    const byExercise: Record<string, { id: string; name: string; sets: number; volume: number; sessions: Set<string> }> = {}
+    allSets.forEach((s) => {
+      const ex = s.exercise
+      if (!ex?.id) return
+      if (!byExercise[ex.id]) byExercise[ex.id] = { id: ex.id, name: ex.name, sets: 0, volume: 0, sessions: new Set() }
+      byExercise[ex.id].sets++
+      byExercise[ex.id].volume += (s.weight ?? 0) * (s.reps ?? 1)
+      const date = s.workout_log?.date
+      if (date) byExercise[ex.id].sessions.add(date)
+    })
+    return Object.values(byExercise)
+      .sort((a, b) => b.sets - a.sets)
+      .slice(0, 5)
+      .map((e) => ({ ...e, sessions: e.sessions.size }))
   }, [allSets])
 
   const totalVolume = allSets.reduce((sum, s) => sum + (s.weight ?? 0) * (s.reps ?? 1), 0)
@@ -255,9 +273,45 @@ export default function ProfilePage() {
         )}
       </div>
 
+      {/* Most Done Exercises */}
+      {mostDoneExercises.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 p-4">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Most Done Exercises</h2>
+          <div className="space-y-1">
+            {mostDoneExercises.map((ex, i) => (
+              <Link
+                key={ex.id}
+                href={`/exercises/${ex.id}`}
+                className="flex items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+              >
+                <span className="text-xs font-bold text-gray-400 dark:text-gray-500 w-4 shrink-0 text-center">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{ex.name}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                    {ex.sets} sets · {ex.sessions} session{ex.sessions !== 1 ? 's' : ''}{ex.volume > 0 ? ` · ${formatVolume(ex.volume)} lbs` : ''}
+                  </div>
+                </div>
+                <span className="text-gray-300 dark:text-gray-600 text-lg shrink-0">›</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Quick-access cards */}
       <div className="space-y-3">
         <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide px-1">Explore</p>
+
+        <Link
+          href="/friends"
+          className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4 py-4 flex items-center justify-between hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
+        >
+          <div>
+            <div className="font-semibold text-gray-900 dark:text-white text-sm">Friends</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Manage friends and see their activity</div>
+          </div>
+          <span className="text-gray-300 dark:text-gray-600 text-lg ml-3 shrink-0">›</span>
+        </Link>
 
         <Link
           href="/exercises"
@@ -281,13 +335,16 @@ export default function ProfilePage() {
           <span className="text-gray-300 dark:text-gray-600 text-lg ml-3 shrink-0">›</span>
         </Link>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4 py-4 flex items-center justify-between opacity-50">
+        <Link
+          href="/routines"
+          className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4 py-4 flex items-center justify-between hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
+        >
           <div>
             <div className="font-semibold text-gray-900 dark:text-white text-sm">Routine Statistics</div>
-            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Coming soon</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">View and manage your routines</div>
           </div>
           <span className="text-gray-300 dark:text-gray-600 text-lg ml-3 shrink-0">›</span>
-        </div>
+        </Link>
       </div>
     </div>
   )

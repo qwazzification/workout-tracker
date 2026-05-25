@@ -39,6 +39,9 @@ export default function AccountPage() {
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [passwordMsg, setPasswordMsg] = useState('')
 
+  // Sign out
+  const [signOutPending, setSignOutPending] = useState(false)
+
   // Account deletion
   const [deleteConfirm, setDeleteConfirm] = useState('')
   const [deleting, setDeleting] = useState(false)
@@ -68,6 +71,13 @@ export default function AccountPage() {
         height: profile.height || null,
       },
     })
+    // Sync display name to the public profiles table so friends can see it
+    if (!error && user) {
+      await supabase.from('profiles').upsert(
+        { id: user.id, email: user.email ?? null, display_name: profile.displayName.trim() || null },
+        { onConflict: 'id' }
+      )
+    }
     setProfileSaving(false)
     setProfileMsg(error ? error.message : 'Saved!')
     setTimeout(() => setProfileMsg(''), 2500)
@@ -99,6 +109,11 @@ export default function AccountPage() {
       setConfirmPassword('')
     }
     setTimeout(() => setPasswordMsg(''), 3000)
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut()
+    router.replace('/login')
   }
 
   async function deleteAccount() {
@@ -255,6 +270,32 @@ export default function AccountPage() {
             {passwordMsg && <span className="text-xs text-gray-500 dark:text-gray-400">{passwordMsg}</span>}
           </div>
         </div>
+      </div>
+
+      {/* ── Sign out ─────────────────────────────────────────────────── */}
+      <div className={cardClass}>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">Session</h2>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">
+          Signed in as <span className="font-medium text-gray-600 dark:text-gray-300">{user?.email}</span>
+        </p>
+        {!signOutPending ? (
+          <button
+            onClick={() => setSignOutPending(true)}
+            className="border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            Sign out
+          </button>
+        ) : (
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-gray-600 dark:text-gray-300">Sure you want to sign out?</span>
+            <button onClick={signOut} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 transition-colors">
+              Yes, sign out
+            </button>
+            <button onClick={() => setSignOutPending(false)} className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-2">
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Danger zone ──────────────────────────────────────────────── */}

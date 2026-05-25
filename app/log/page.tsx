@@ -11,6 +11,22 @@ interface SetEntry {
   weight: string
   repsHint: string
   weightHint: string
+  duration: string      // minutes as decimal
+  distance: string      // miles as decimal
+  durationHint: string
+  distanceHint: string
+}
+
+function parseDurationToSeconds(minutesStr: string): number | null {
+  const val = parseFloat(minutesStr)
+  if (isNaN(val) || val < 0) return null
+  return Math.round(val * 60)
+}
+
+function fmtDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${m}m`
 }
 
 interface ExerciseEntry {
@@ -28,6 +44,7 @@ interface TemplateEntry {
 export default function LogWorkout() {
   const router = useRouter()
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [workoutName, setWorkoutName] = useState('')
   const [routines, setRoutines] = useState<Routine[]>([])
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [routineId, setRoutineId] = useState('')
@@ -36,9 +53,17 @@ export default function LogWorkout() {
   const [template, setTemplate] = useState<TemplateEntry[]>([])
   const [saving, setSaving] = useState(false)
 
+  const [isPublic, setIsPublic] = useState(true)
+
   const [creatingForIdx, setCreatingForIdx] = useState<number | null>(null)
   const [newExName, setNewExName] = useState('')
   const [newExMuscle, setNewExMuscle] = useState('')
+
+  function isCardioExercise(exerciseId: string): boolean {
+    return exercises.find((e) => e.id === exerciseId)?.muscle_group?.trim().toLowerCase() === 'cardio'
+  }
+
+  const blankSet: SetEntry = { reps: '', weight: '', repsHint: '', weightHint: '', duration: '', distance: '', durationHint: '', distanceHint: '' }
 
   useEffect(() => {
     async function load() {
@@ -54,6 +79,13 @@ export default function LogWorkout() {
 
   async function onRoutineChange(id: string) {
     setRoutineId(id)
+    // Auto-fill workout name from routine when name hasn't been customised yet
+    const newRoutineName = routines.find((r) => r.id === id)?.name ?? ''
+    setWorkoutName((prev) => {
+      const currentIsRoutineName = routines.some((r) => r.name === prev)
+      if (!prev || currentIsRoutineName) return newRoutineName
+      return prev
+    })
     if (!id) { setTemplate([]); return }
     const { data } = await supabase
       .from('routine_exercises')
@@ -68,7 +100,7 @@ export default function LogWorkout() {
       tmpl.map((t) =>
         supabase
           .from('sets')
-          .select('reps, weight')
+          .select('reps, weight, duration_seconds, distance_miles')
           .eq('exercise_id', t.exercise_id)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -78,7 +110,7 @@ export default function LogWorkout() {
 
     setEntries(
       tmpl.map((t, i) => {
-        const last = lastSets[i].data
+        const last = lastSets[i].data as { reps: number | null; weight: number | null; duration_seconds: number | null; distance_miles: number | null } | null
         return {
           exercise_id: t.exercise_id,
           sets: Array.from({ length: t.default_sets }, () => ({
@@ -86,6 +118,10 @@ export default function LogWorkout() {
             weight: '',
             repsHint: (t.default_reps ?? last?.reps)?.toString() ?? '',
             weightHint: last?.weight?.toString() ?? '',
+            duration: '',
+            distance: '',
+            durationHint: last?.duration_seconds != null ? (last.duration_seconds / 60).toString() : '',
+            distanceHint: last?.distance_miles?.toString() ?? '',
           })),
           notes: '',
         }
@@ -94,7 +130,7 @@ export default function LogWorkout() {
   }
 
   function addExercise() {
-    setEntries((prev) => [...prev, { exercise_id: '', sets: [{ reps: '', weight: '', repsHint: '', weightHint: '' }], notes: '' }])
+    setEntries((prev) => [...prev, { exercise_id: '', sets: [blankSet], notes: '' }])
   }
 
   function removeExercise(exIdx: number) {
@@ -126,6 +162,10 @@ export default function LogWorkout() {
             weight: '',
             repsHint: last?.repsHint || last?.reps || '',
             weightHint: last?.weightHint || last?.weight || '',
+            duration: '',
+            distance: '',
+            durationHint: last?.durationHint || last?.duration || '',
+            distanceHint: last?.distanceHint || last?.distance || '',
           }],
         }
       })
@@ -148,7 +188,7 @@ export default function LogWorkout() {
     )
   }
 
-  function updateSetField(exIdx: number, setIdx: number, field: 'reps' | 'weight', value: string) {
+  function updateSetField(exIdx: number, setIdx: number, field: 'reps' | 'weight' | 'duration' | 'distance', value: string) {
     setEntries((prev) =>
       prev.map((entry, i) => {
         if (i !== exIdx) return entry
@@ -196,7 +236,7 @@ export default function LogWorkout() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: log, error: logError } = await supabase
       .from('workout_logs')
-      .insert({ date, routine_id: routineId || null, notes: notes.trim() || null, user_id: user!.id })
+      .insert({ date, name: workoutName.trim() || null, routine_id: routineId || null, notes: notes.trim() || null, user_id: user!.id, is_public: isPublic })
       .select()
       .single()
 
@@ -206,15 +246,18 @@ export default function LogWorkout() {
       return
     }
 
-    const setsToInsert = entries.flatMap((entry) =>
-      entry.sets.map((set, setIdx) => ({
+    const setsToInsert = entries.flatMap((entry) => {
+      const cardio = isCardioExercise(entry.exercise_id)
+      return entry.sets.map((set, setIdx) => ({
         workout_log_id: log.id,
         exercise_id: entry.exercise_id,
         set_number: setIdx + 1,
-        reps: set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null),
-        weight: set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null),
+        reps: cardio ? null : (set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null)),
+        weight: cardio ? null : (set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null)),
+        duration_seconds: cardio ? parseDurationToSeconds(set.duration !== '' ? set.duration : set.durationHint) : null,
+        distance_miles: cardio ? (parseFloat(set.distance !== '' ? set.distance : set.distanceHint) || null) : null,
       }))
-    )
+    })
 
     const { error: setsError } = await supabase.from('sets').insert(setsToInsert)
     if (setsError) {
@@ -266,6 +309,16 @@ export default function LogWorkout() {
 
       <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-4 space-y-4">
         <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Workout name</label>
+          <input
+            type="text"
+            value={workoutName}
+            onChange={(e) => setWorkoutName(e.target.value)}
+            placeholder="e.g. Push Day, Morning Session..."
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+          />
+        </div>
+        <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Date</label>
           <input
             type="date"
@@ -303,6 +356,25 @@ export default function LogWorkout() {
             className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
           />
         </div>
+        <div className="flex items-center justify-between pt-1">
+          <div>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Visibility</span>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              {isPublic ? 'Visible to friends in their feed' : 'Only visible to you'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsPublic((p) => !p)}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${
+              isPublic
+                ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            {isPublic ? '🌐 Public' : '🔒 Private'}
+          </button>
+        </div>
       </div>
 
       {entries.map((entry, exIdx) => (
@@ -324,7 +396,11 @@ export default function LogWorkout() {
               className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="">Select exercise...</option>
-              {exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+              {exercises.map((ex) => (
+                <option key={ex.id} value={ex.id}>
+                  {ex.name}{ex.muscle_group ? ` (${ex.muscle_group})` : ''}
+                </option>
+              ))}
             </select>
             <button
               onClick={() => removeExercise(exIdx)}
@@ -342,12 +418,21 @@ export default function LogWorkout() {
                 className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
               <div className="flex gap-2">
-                <input
+                <select
                   value={newExMuscle}
                   onChange={(e) => setNewExMuscle(e.target.value)}
-                  placeholder="Muscle group (optional)"
                   className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
+                >
+                  <option value="">Muscle group (optional)</option>
+                  <option value="Cardio">Cardio</option>
+                  <option value="Chest">Chest</option>
+                  <option value="Back">Back</option>
+                  <option value="Shoulders">Shoulders</option>
+                  <option value="Arms">Arms</option>
+                  <option value="Legs">Legs</option>
+                  <option value="Core">Core</option>
+                  <option value="Full Body">Full Body</option>
+                </select>
                 <button
                   onClick={() => createExercise(exIdx)}
                   disabled={!newExName.trim()}
@@ -366,40 +451,76 @@ export default function LogWorkout() {
             >+ Create new exercise</button>
           )}
 
-          <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 px-1">
-            <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Set</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Reps</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Weight (lbs)</span>
-            <span />
-          </div>
-          {entry.sets.map((set, setIdx) => (
-            <div key={setIdx} className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 items-center">
-              <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min="0"
-                value={set.reps}
-                onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
-                placeholder={set.repsHint || '0'}
-                className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-              />
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="2.5"
-                value={set.weight}
-                onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
-                placeholder={set.weightHint || '0'}
-                className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-              />
-              <button
-                onClick={() => removeSet(exIdx, setIdx)}
-                className="text-red-400 hover:text-red-600 text-lg leading-none"
-              >×</button>
-            </div>
-          ))}
+          {isCardioExercise(entry.exercise_id) ? (
+            <>
+              <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 px-1">
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Set</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Duration (min)</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Distance (mi)</span>
+                <span />
+              </div>
+              {entry.sets.map((set, setIdx) => (
+                <div key={setIdx} className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 items-center">
+                  <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.5"
+                    value={set.duration}
+                    onChange={(e) => updateSetField(exIdx, setIdx, 'duration', e.target.value)}
+                    placeholder={set.durationHint ? fmtDuration(Math.round(parseFloat(set.durationHint) * 60)) : '0'}
+                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.1"
+                    value={set.distance}
+                    onChange={(e) => updateSetField(exIdx, setIdx, 'distance', e.target.value)}
+                    placeholder={set.distanceHint || '0'}
+                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  />
+                  <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 px-1">
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Set</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Reps</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Weight (lbs)</span>
+                <span />
+              </div>
+              {entry.sets.map((set, setIdx) => (
+                <div key={setIdx} className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 items-center">
+                  <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={set.reps}
+                    onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
+                    placeholder={set.repsHint || '0'}
+                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="2.5"
+                    value={set.weight}
+                    onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
+                    placeholder={set.weightHint || '0'}
+                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  />
+                  <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                </div>
+              ))}
+            </>
+          )}
           <button onClick={() => addSet(exIdx)} className="text-brand-600 text-sm hover:underline mt-1">
             + Add set
           </button>

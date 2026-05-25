@@ -1,10 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { usePathname } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
-import { useTheme } from './ThemeProvider'
 
 const navLinks = [
   { href: '/', label: 'Feed', icon: '🏠' },
@@ -14,13 +12,6 @@ const navLinks = [
 
 export default function Nav({ user }: { user: User }) {
   const pathname = usePathname()
-  const router = useRouter()
-  const { theme, toggleTheme } = useTheme()
-
-  async function signOut() {
-    await supabase.auth.signOut()
-    router.replace('/login')
-  }
 
   return (
     <>
@@ -42,19 +33,7 @@ export default function Nav({ user }: { user: User }) {
           </Link>
         ))}
         <div className="mt-auto pt-4 border-t border-gray-700">
-          <p className="text-xs text-gray-400 px-2 mb-2 truncate">{user.email}</p>
-          <button
-            onClick={toggleTheme}
-            className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors"
-          >
-            {theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode'}
-          </button>
-          <button
-            onClick={signOut}
-            className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors"
-          >
-            Sign out
-          </button>
+          <p className="text-xs text-gray-400 px-2 truncate">{user.email}</p>
         </div>
       </nav>
 
@@ -72,20 +51,6 @@ export default function Nav({ user }: { user: User }) {
             {link.label}
           </Link>
         ))}
-        <button
-          onClick={toggleTheme}
-          className="flex flex-col items-center justify-center flex-1 py-2 text-xs gap-0.5 text-gray-400 hover:text-gray-200 transition-colors"
-        >
-          <span className="text-xl">{theme === 'dark' ? '☀️' : '🌙'}</span>
-          {theme === 'dark' ? 'Light' : 'Dark'}
-        </button>
-        <button
-          onClick={signOut}
-          className="flex flex-col items-center justify-center flex-1 py-2 text-xs gap-0.5 text-gray-400 hover:text-gray-200 transition-colors"
-        >
-          <span className="text-xl">👤</span>
-          Sign out
-        </button>
       </nav>
     </>
   )

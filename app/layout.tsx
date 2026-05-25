@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import AuthGuard from '@/components/AuthGuard'
-import ThemeProvider from '@/components/ThemeProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -17,9 +16,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} bg-gray-50 min-h-screen`}>
-        <ThemeProvider><AuthGuard>{children}</AuthGuard></ThemeProvider>
+    <html lang="en" className="dark">
+      <body className={`${inter.className} bg-gray-900 min-h-screen`}>
+        <AuthGuard>{children}</AuthGuard>
       </body>
     </html>
   )

@@ -11,6 +11,7 @@ import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveCo
 
 interface WorkoutDay {
   date: string
+  name?: string | null
   routineName: string | null
   workoutId?: string
 }
@@ -203,7 +204,7 @@ export default function WorkoutActivity({
           {/* Day detail popup */}
           {selectedDay && workoutMap.has(selectedDay) && (() => {
             const entry = workoutMap.get(selectedDay)!
-            const label = entry.routineName || 'Workout'
+            const label = entry.name ?? entry.routineName ?? 'Workout'
             return (
             <div className="mt-3 bg-brand-50 dark:bg-brand-950 rounded-lg px-3 py-2">
               <div className="text-sm font-medium text-brand-800 dark:text-brand-300">

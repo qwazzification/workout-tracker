@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Exercise } from '@/lib/types'
 import ExerciseChart, { ChartPoint } from '@/components/ExerciseChart'
+import CardioChart, { CardioPoint, fmtPace } from '@/components/CardioChart'
 import { format, subDays } from 'date-fns'
 
 const inputClass =
@@ -19,10 +20,18 @@ const TIME_PRESETS = [
   { label: 'All', days: 0 },
 ] as const
 
-interface RawPoint {
-  rawDate: string   // 'yyyy-MM-dd' — used for date filtering
+// Strength chart data
+interface StrengthRawPoint {
+  rawDate: string
   maxWeight: number
   totalVolume: number
+}
+
+// Cardio chart data
+interface CardioRawPoint {
+  rawDate: string
+  paceSeconds: number  // best pace that session (sec/mile)
+  distance: number     // total distance that session (miles)
 }
 
 export default function ExerciseDetailPage() {
@@ -40,35 +49,48 @@ export default function ExerciseDetailPage() {
     name: '', muscle_group: '', primary_muscle: '', secondary_muscle: '', notes: '', link: '',
   })
 
-  // Chart state — store raw dates so time-range filter works correctly
-  const [rawPoints, setRawPoints] = useState<RawPoint[]>([])
   const [preset, setPreset] = useState('3M')
   const [chartLoading, setChartLoading] = useState(true)
 
-  // All-time stats
+  // Strength stats
+  const [strengthPoints, setStrengthPoints] = useState<StrengthRawPoint[]>([])
   const [totalSets, setTotalSets] = useState(0)
   const [prDate, setPrDate] = useState<string | null>(null)
+
+  // Cardio stats
+  const [cardioPoints, setCardioPoints] = useState<CardioRawPoint[]>([])
+  const [bestPaceSecs, setBestPaceSecs] = useState<number | null>(null)
+  const [bestPaceDate, setBestPaceDate] = useState<string | null>(null)
+  const [totalDistance, setTotalDistance] = useState(0)
+  const [cardioSessions, setCardioSessions] = useState(0)
+
+  const isCardio = exercise?.muscle_group?.trim().toLowerCase() === 'cardio'
 
   useEffect(() => {
     async function load() {
       const { data } = await supabase.from('exercises').select('*').eq('id', id).single()
       if (!data) { setNotFound(true); setLoading(false); return }
-      setExercise(data as Exercise)
+      const ex = data as Exercise
+      setExercise(ex)
       setEditForm({
-        name: data.name,
-        muscle_group: data.muscle_group ?? '',
-        primary_muscle: data.primary_muscle ?? '',
-        secondary_muscle: data.secondary_muscle ?? '',
-        notes: data.notes ?? '',
-        link: data.link ?? '',
+        name: ex.name,
+        muscle_group: ex.muscle_group ?? '',
+        primary_muscle: ex.primary_muscle ?? '',
+        secondary_muscle: ex.secondary_muscle ?? '',
+        notes: ex.notes ?? '',
+        link: ex.link ?? '',
       })
       setLoading(false)
-      loadChart()
+      if (ex.muscle_group?.toLowerCase() === 'cardio') {
+        loadCardioChart()
+      } else {
+        loadStrengthChart()
+      }
     }
     load()
   }, [id])
 
-  async function loadChart() {
+  async function loadStrengthChart() {
     setChartLoading(true)
     const { data: sets } = await supabase
       .from('sets')
@@ -78,8 +100,8 @@ export default function ExerciseDetailPage() {
 
     if (!sets) { setChartLoading(false); return }
 
-    type RawRow = { reps: number | null; weight: number | null; workout_logs: { date: string } | null }
-    const rows = sets as unknown as RawRow[]
+    type Row = { reps: number | null; weight: number | null; workout_logs: { date: string } | null }
+    const rows = sets as unknown as Row[]
 
     const byDate: Record<string, { maxWeight: number; totalVolume: number }> = {}
     let maxW = 0
@@ -96,7 +118,7 @@ export default function ExerciseDetailPage() {
       if (w > maxW) { maxW = w; maxWDate = date }
     })
 
-    const points: RawPoint[] = Object.entries(byDate)
+    const points: StrengthRawPoint[] = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, vals]) => ({
         rawDate: date,
@@ -104,25 +126,89 @@ export default function ExerciseDetailPage() {
         totalVolume: Math.round(vals.totalVolume),
       }))
 
-    setRawPoints(points)
+    setStrengthPoints(points)
     setTotalSets(rows.length)
     setPrDate(maxWDate ? format(new Date(maxWDate + 'T00:00:00'), 'MMM d, yyyy') : null)
     setChartLoading(false)
   }
 
-  /** Filter raw points by the selected preset and format dates for display. */
-  function getChartData(): ChartPoint[] {
-    const presetObj = TIME_PRESETS.find((x) => x.label === preset)
-    const cutoff = presetObj && presetObj.days > 0
-      ? format(subDays(new Date(), presetObj.days), 'yyyy-MM-dd')
-      : '2000-01-01'
-    return rawPoints
+  async function loadCardioChart() {
+    setChartLoading(true)
+    const { data: sets } = await supabase
+      .from('sets')
+      .select('duration_seconds, distance_miles, workout_logs(date)')
+      .eq('exercise_id', id)
+      .not('duration_seconds', 'is', null)
+
+    if (!sets) { setChartLoading(false); return }
+
+    type Row = { duration_seconds: number | null; distance_miles: number | null; workout_logs: { date: string } | null }
+    const rows = sets as unknown as Row[]
+
+    const byDate: Record<string, { bestPace: number; totalDist: number }> = {}
+    let best = Infinity
+    let bestDate: string | null = null
+    let distSum = 0
+
+    rows.forEach((s) => {
+      const date = s.workout_logs?.date
+      if (!date || s.duration_seconds == null) return
+      const dist = s.distance_miles ?? 0
+      if (!byDate[date]) byDate[date] = { bestPace: Infinity, totalDist: 0 }
+      if (dist > 0) {
+        const pace = s.duration_seconds / dist
+        byDate[date].bestPace = Math.min(byDate[date].bestPace, pace)
+        if (pace < best) { best = pace; bestDate = date }
+      }
+      byDate[date].totalDist += dist
+      distSum += dist
+    })
+
+    const points: CardioRawPoint[] = Object.entries(byDate)
+      .filter(([, v]) => v.bestPace !== Infinity)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, vals]) => ({
+        rawDate: date,
+        paceSeconds: Math.round(vals.bestPace),
+        distance: Math.round(vals.totalDist * 100) / 100,
+      }))
+
+    setCardioPoints(points)
+    setBestPaceSecs(best === Infinity ? null : Math.round(best))
+    setBestPaceDate(bestDate ? format(new Date(bestDate + 'T00:00:00'), 'MMM d, yyyy') : null)
+    setTotalDistance(Math.round(distSum * 10) / 10)
+    setCardioSessions(Object.keys(byDate).length)
+    setTotalSets(rows.length)
+    setChartLoading(false)
+  }
+
+  function getStrengthChartData(): ChartPoint[] {
+    const cutoff = getCutoff()
+    return strengthPoints
       .filter((p) => p.rawDate >= cutoff)
       .map((p) => ({
         date: format(new Date(p.rawDate + 'T00:00:00'), 'M/d'),
         maxWeight: p.maxWeight,
         totalVolume: p.totalVolume,
       }))
+  }
+
+  function getCardioChartData(): CardioPoint[] {
+    const cutoff = getCutoff()
+    return cardioPoints
+      .filter((p) => p.rawDate >= cutoff)
+      .map((p) => ({
+        date: format(new Date(p.rawDate + 'T00:00:00'), 'M/d'),
+        paceSeconds: p.paceSeconds,
+        distance: p.distance,
+      }))
+  }
+
+  function getCutoff(): string {
+    const presetObj = TIME_PRESETS.find((x) => x.label === preset)
+    return presetObj && presetObj.days > 0
+      ? format(subDays(new Date(), presetObj.days), 'yyyy-MM-dd')
+      : '2000-01-01'
   }
 
   function startEdit() {
@@ -175,12 +261,12 @@ export default function ExerciseDetailPage() {
   if (!exercise) return null
 
   const isCustom = exercise.user_id !== null
-  // Stats are all-time (not affected by the chart time range)
-  const allTimeMax = rawPoints.length > 0 ? Math.max(...rawPoints.map((d) => d.maxWeight)) : null
-  const sessionCount = rawPoints.length
-
   const btnInactive = 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
   const btnActive = 'bg-brand-600 text-white'
+
+  // Strength stats
+  const allTimeMax = strengthPoints.length > 0 ? Math.max(...strengthPoints.map((d) => d.maxWeight)) : null
+  const sessionCount = isCardio ? cardioSessions : strengthPoints.length
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -239,6 +325,11 @@ export default function ExerciseDetailPage() {
               Custom
             </span>
           )}
+          {isCardio && (
+            <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full font-medium">
+              Cardio
+            </span>
+          )}
         </div>
         {exercise.muscle_group && (
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{exercise.muscle_group}</p>
@@ -249,10 +340,34 @@ export default function ExerciseDetailPage() {
       {editing && (
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-4 space-y-3">
           <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Edit Exercise</p>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Name</label>
+            <input
+              value={editForm.name}
+              onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Muscle group</label>
+            <select
+              value={editForm.muscle_group}
+              onChange={(e) => setEditForm((p) => ({ ...p, muscle_group: e.target.value }))}
+              className={inputClass}
+            >
+              <option value="">— none —</option>
+              <option value="Cardio">Cardio</option>
+              <option value="Chest">Chest</option>
+              <option value="Back">Back</option>
+              <option value="Shoulders">Shoulders</option>
+              <option value="Arms">Arms</option>
+              <option value="Legs">Legs</option>
+              <option value="Core">Core</option>
+              <option value="Full Body">Full Body</option>
+            </select>
+          </div>
           {(
             [
-              { key: 'name', label: 'Name', placeholder: '' },
-              { key: 'muscle_group', label: 'Muscle group', placeholder: 'e.g. Chest, Back, Legs...' },
               { key: 'primary_muscle', label: 'Primary muscle', placeholder: 'e.g. Pecs, Lats...' },
               { key: 'secondary_muscle', label: 'Secondary muscles', placeholder: 'e.g. Triceps, Biceps...' },
             ] as { key: keyof typeof editForm; label: string; placeholder: string }[]
@@ -327,25 +442,53 @@ export default function ExerciseDetailPage() {
         </div>
       )}
 
-      {/* All-time stats grid */}
-      {(allTimeMax !== null || sessionCount > 0) && (
-        <div className="grid grid-cols-3 gap-3 mb-2">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
-            <div className="text-xl font-bold text-brand-600">{allTimeMax ?? '—'}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Max weight (lbs)</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
-            <div className="text-xl font-bold text-brand-600">{sessionCount}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Sessions</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
-            <div className="text-xl font-bold text-brand-600">{totalSets}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total sets</div>
-          </div>
-        </div>
-      )}
-      {prDate && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 px-1">PR set on {prDate}</p>
+      {/* Stats grid */}
+      {isCardio ? (
+        <>
+          {(bestPaceSecs !== null || cardioSessions > 0) && (
+            <div className="grid grid-cols-3 gap-3 mb-2">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
+                <div className="text-xl font-bold text-brand-600">
+                  {bestPaceSecs != null ? fmtPace(bestPaceSecs) : '—'}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Best pace</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
+                <div className="text-xl font-bold text-brand-600">{totalDistance}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total miles</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
+                <div className="text-xl font-bold text-brand-600">{cardioSessions}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Sessions</div>
+              </div>
+            </div>
+          )}
+          {bestPaceDate && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 px-1">Best pace on {bestPaceDate}</p>
+          )}
+        </>
+      ) : (
+        <>
+          {(allTimeMax !== null || sessionCount > 0) && (
+            <div className="grid grid-cols-3 gap-3 mb-2">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
+                <div className="text-xl font-bold text-brand-600">{allTimeMax ?? '—'}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Max weight (lbs)</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
+                <div className="text-xl font-bold text-brand-600">{sessionCount}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Sessions</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
+                <div className="text-xl font-bold text-brand-600">{totalSets}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total sets</div>
+              </div>
+            </div>
+          )}
+          {prDate && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 px-1">PR set on {prDate}</p>
+          )}
+        </>
       )}
 
       {/* Progress chart */}
@@ -368,8 +511,10 @@ export default function ExerciseDetailPage() {
           <div className="flex items-center justify-center h-52 text-gray-400 dark:text-gray-500 text-sm">
             Loading...
           </div>
+        ) : isCardio ? (
+          <CardioChart data={getCardioChartData()} />
         ) : (
-          <ExerciseChart data={getChartData()} />
+          <ExerciseChart data={getStrengthChartData()} />
         )}
       </div>
     </div>
