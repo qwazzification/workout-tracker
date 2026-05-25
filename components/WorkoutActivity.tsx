@@ -70,9 +70,9 @@ export default function WorkoutActivity({
   }
 
   const workoutMap = useMemo(() => {
-    const map = new Map<string, { routineName: string | null; workoutId: string | null }>()
+    const map = new Map<string, { name: string | null; routineName: string | null; workoutId: string | null }>()
     workouts.forEach((w) => {
-      if (!map.has(w.date)) map.set(w.date, { routineName: w.routineName, workoutId: w.workoutId ?? null })
+      if (!map.has(w.date)) map.set(w.date, { name: w.name ?? null, routineName: w.routineName, workoutId: w.workoutId ?? null })
     })
     return map
   }, [workouts])
