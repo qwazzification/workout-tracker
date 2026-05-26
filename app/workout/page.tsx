@@ -71,7 +71,7 @@ export default function WorkoutPage() {
     const routineName = routineId ? (routines.find((r) => r.id === routineId)?.name ?? null) : null
     const { data } = await supabase
       .from('workout_logs')
-      .insert({ date: today, name: routineName, routine_id: routineId ?? null, user_id: userId })
+      .insert({ date: today, name: routineName, routine_id: routineId ?? null, user_id: userId, is_public: false })
       .select().single()
     if (!data) return
     localStorage.setItem('activeWorkoutId', data.id)

@@ -68,6 +68,10 @@ export default function ExerciseDetailPage() {
 
   useEffect(() => {
     async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const userId = user.id
+
       const { data } = await supabase.from('exercises').select('*').eq('id', id).single()
       if (!data) { setNotFound(true); setLoading(false); return }
       const ex = data as Exercise
@@ -82,20 +86,21 @@ export default function ExerciseDetailPage() {
       })
       setLoading(false)
       if (ex.muscle_group?.toLowerCase() === 'cardio') {
-        loadCardioChart()
+        loadCardioChart(userId)
       } else {
-        loadStrengthChart()
+        loadStrengthChart(userId)
       }
     }
     load()
   }, [id])
 
-  async function loadStrengthChart() {
+  async function loadStrengthChart(userId: string) {
     setChartLoading(true)
     const { data: sets } = await supabase
       .from('sets')
-      .select('reps, weight, workout_logs(date)')
+      .select('reps, weight, workout_logs!inner(date, user_id)')
       .eq('exercise_id', id)
+      .eq('workout_logs.user_id', userId)
       .not('weight', 'is', null)
 
     if (!sets) { setChartLoading(false); return }
@@ -132,12 +137,13 @@ export default function ExerciseDetailPage() {
     setChartLoading(false)
   }
 
-  async function loadCardioChart() {
+  async function loadCardioChart(userId: string) {
     setChartLoading(true)
     const { data: sets } = await supabase
       .from('sets')
-      .select('duration_seconds, distance_miles, workout_logs(date)')
+      .select('duration_seconds, distance_miles, workout_logs!inner(date, user_id)')
       .eq('exercise_id', id)
+      .eq('workout_logs.user_id', userId)
       .not('duration_seconds', 'is', null)
 
     if (!sets) { setChartLoading(false); return }

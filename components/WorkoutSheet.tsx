@@ -70,6 +70,13 @@ export default function WorkoutSheet({
     loadWorkout()
   }, [workoutId])
 
+  // Persist full exercise state to localStorage on every change so navigating
+  // away and back never loses exercises or typed-but-unconfirmed values.
+  useEffect(() => {
+    if (!workoutId || loading) return
+    localStorage.setItem(`workout-state-${workoutId}`, JSON.stringify(liveExercises))
+  }, [liveExercises, workoutId, loading])
+
   useEffect(() => {
     if (!startedAt) return
     const tick = () => setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000))
@@ -100,6 +107,22 @@ export default function WorkoutSheet({
     }
     setStartedAt(new Date(startStr))
 
+    // ── Restore from localStorage first ──────────────────────────────────────
+    // This preserves all exercises (including those with unconfirmed sets) when
+    // the user navigates away and comes back during an active workout.
+    const savedState = localStorage.getItem(`workout-state-${workoutId}`)
+    if (savedState) {
+      try {
+        setLiveExercises(JSON.parse(savedState))
+        setLoading(false)
+        return
+      } catch {
+        // Corrupt data — fall through to DB load
+        localStorage.removeItem(`workout-state-${workoutId}`)
+      }
+    }
+
+    // ── First load: build state from DB / routine template ───────────────────
     const [{ data: rawSets }, { data: rawNotes }] = await Promise.all([
       supabase
         .from('sets')
@@ -127,7 +150,7 @@ export default function WorkoutSheet({
     }[]
 
     if (sets.length > 0) {
-      // Resume: show saved values as actual values (already confirmed data)
+      // Resume from a previous session that had completed sets in the DB
       const exerciseMap: Record<string, LiveExercise> = {}
       const order: string[] = []
       sets.forEach((s) => {
@@ -405,6 +428,7 @@ export default function WorkoutSheet({
       started_at: timerStart?.toISOString() ?? null,
       ended_at: endedAt.toISOString(),
       duration_seconds: durationSeconds,
+      is_public: true,
     }).eq('id', workoutId)
 
     // Flush any unsaved sets, using hint as fallback for untyped fields
@@ -428,12 +452,14 @@ export default function WorkoutSheet({
     })
     await Promise.all(inserts)
     localStorage.removeItem(timerKey)
+    localStorage.removeItem(`workout-state-${workoutId}`)
     onFinish()
   }
 
   async function handleDiscard() {
     if (!confirm('Discard this workout? All sets will be deleted.')) return
     localStorage.removeItem(`workout-start-${workoutId}`)
+    localStorage.removeItem(`workout-state-${workoutId}`)
     onDiscard()
   }
 
@@ -541,7 +567,6 @@ export default function WorkoutSheet({
                       min="0"
                       value={set.reps}
                       onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
-                      onBlur={() => saveSet(exIdx, setIdx)}
                       placeholder={set.repsHint || '0'}
                       className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                     />
@@ -552,7 +577,6 @@ export default function WorkoutSheet({
                       step="2.5"
                       value={set.weight}
                       onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
-                      onBlur={() => saveSet(exIdx, setIdx)}
                       placeholder={set.weightHint || '0'}
                       className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                     />

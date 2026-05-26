@@ -48,30 +48,40 @@ export default function ProfilePage() {
   const [radarTo, setRadarTo] = useState(today)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setUser(user)
 
-    // Workout list for calendar — also drives totalWorkouts count
-    supabase
-      .from('workout_logs')
-      .select('id, date, name, routine:routines(name)')
-      .order('date', { ascending: false })
-      .then(({ data }) => {
-        setTotalWorkouts(data?.length ?? 0)
-        setCalendarWorkouts(
-          ((data ?? []) as unknown as { id: string; date: string; name: string | null; routine: { name: string } | null }[]).map((w) => ({
-            date: w.date,
-            name: w.name,
-            workoutId: w.id,
-            routineName: w.routine?.name ?? null,
-          }))
-        )
-      })
+      // Fetch only this user's workouts
+      const { data: logsData } = await supabase
+        .from('workout_logs')
+        .select('id, date, name, routine:routines(name)')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false })
 
-    // Sets — used for radar chart, volume stats, and day-exercise details
-    supabase
-      .from('sets')
-      .select('weight, reps, exercise:exercises(id, name, muscle_group), workout_log:workout_logs(date)')
-      .then(({ data }) => setAllSets((data as unknown as RawSet[]) || []))
+      const logs = (logsData ?? []) as unknown as {
+        id: string; date: string; name: string | null; routine: { name: string } | null
+      }[]
+      setTotalWorkouts(logs.length)
+      setCalendarWorkouts(logs.map((w) => ({
+        date: w.date,
+        name: w.name,
+        workoutId: w.id,
+        routineName: w.routine?.name ?? null,
+      })))
+
+      // Fetch sets scoped to only this user's workouts
+      const logIds = logs.map((l) => l.id)
+      if (logIds.length === 0) { setAllSets([]); return }
+
+      const { data: setsData } = await supabase
+        .from('sets')
+        .select('weight, reps, exercise:exercises(id, name, muscle_group), workout_log:workout_logs(date)')
+        .in('workout_log_id', logIds)
+      setAllSets((setsData as unknown as RawSet[]) || [])
+    }
+    load()
   }, [])
 
   function applyRadarPreset(label: string, days: number) {

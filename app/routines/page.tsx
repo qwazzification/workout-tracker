@@ -33,10 +33,13 @@ export default function RoutinesPage() {
 
   useEffect(() => {
     async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
       const [{ data: r }, { data: re }, { data: wl }] = await Promise.all([
         supabase.from('routines').select('*').order('name'),
         supabase.from('routine_exercises').select('*, exercise:exercises(id, name)').order('sort_order'),
-        supabase.from('workout_logs').select('id, date, routine_id').order('date', { ascending: false }),
+        supabase.from('workout_logs').select('id, date, routine_id').eq('user_id', user.id).order('date', { ascending: false }),
       ])
 
       setRoutines((r as Routine[]) || [])

@@ -210,6 +210,27 @@ export default function LogWorkout() {
     )
   }
 
+  function confirmSet(exIdx: number, setIdx: number) {
+    setEntries((prev) =>
+      prev.map((entry, i) => {
+        if (i !== exIdx) return entry
+        return {
+          ...entry,
+          sets: entry.sets.map((s, j) => {
+            if (j !== setIdx) return s
+            return {
+              ...s,
+              reps:     s.reps     !== '' ? s.reps     : s.repsHint,
+              weight:   s.weight   !== '' ? s.weight   : s.weightHint,
+              duration: s.duration !== '' ? s.duration : s.durationHint,
+              distance: s.distance !== '' ? s.distance : s.distanceHint,
+            }
+          }),
+        }
+      })
+    )
+  }
+
   async function createExercise(exIdx: number) {
     const name = newExName.trim()
     if (!name) return
@@ -453,72 +474,77 @@ export default function LogWorkout() {
 
           {isCardioExercise(entry.exercise_id) ? (
             <>
-              <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 px-1">
+              <div className="grid grid-cols-[2rem_1fr_1fr_1.5rem_1.5rem] gap-2 mb-2 px-1">
                 <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Set</span>
                 <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Duration (min)</span>
                 <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Distance (mi)</span>
-                <span />
+                <span /><span />
               </div>
-              {entry.sets.map((set, setIdx) => (
-                <div key={setIdx} className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 items-center">
-                  <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.5"
-                    value={set.duration}
-                    onChange={(e) => updateSetField(exIdx, setIdx, 'duration', e.target.value)}
-                    placeholder={set.durationHint ? fmtDuration(Math.round(parseFloat(set.durationHint) * 60)) : '0'}
-                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                  />
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.1"
-                    value={set.distance}
-                    onChange={(e) => updateSetField(exIdx, setIdx, 'distance', e.target.value)}
-                    placeholder={set.distanceHint || '0'}
-                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                  />
-                  <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
-                </div>
-              ))}
+              {entry.sets.map((set, setIdx) => {
+                const canConfirm = (set.duration === '' && set.durationHint !== '') || (set.distance === '' && set.distanceHint !== '')
+                return (
+                  <div key={setIdx} className="grid grid-cols-[2rem_1fr_1fr_1.5rem_1.5rem] gap-2 mb-2 items-center">
+                    <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
+                    <input
+                      type="number" inputMode="decimal" min="0" step="0.5"
+                      value={set.duration}
+                      onChange={(e) => updateSetField(exIdx, setIdx, 'duration', e.target.value)}
+                      placeholder={set.durationHint ? fmtDuration(Math.round(parseFloat(set.durationHint) * 60)) : '0'}
+                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                    />
+                    <input
+                      type="number" inputMode="decimal" min="0" step="0.1"
+                      value={set.distance}
+                      onChange={(e) => updateSetField(exIdx, setIdx, 'distance', e.target.value)}
+                      placeholder={set.distanceHint || '0'}
+                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                    />
+                    <button
+                      onClick={() => confirmSet(exIdx, setIdx)}
+                      title="Accept suggested values"
+                      className={`text-base leading-none ${canConfirm ? 'text-brand-500 hover:text-brand-400' : 'text-gray-600 dark:text-gray-600'}`}
+                    >✓</button>
+                    <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                  </div>
+                )
+              })}
             </>
           ) : (
             <>
-              <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 px-1">
+              <div className="grid grid-cols-[2rem_1fr_1fr_1.5rem_1.5rem] gap-2 mb-2 px-1">
                 <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Set</span>
                 <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Reps</span>
                 <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Weight (lbs)</span>
-                <span />
+                <span /><span />
               </div>
-              {entry.sets.map((set, setIdx) => (
-                <div key={setIdx} className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 items-center">
-                  <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    value={set.reps}
-                    onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
-                    placeholder={set.repsHint || '0'}
-                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                  />
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="2.5"
-                    value={set.weight}
-                    onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
-                    placeholder={set.weightHint || '0'}
-                    className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                  />
-                  <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
-                </div>
-              ))}
+              {entry.sets.map((set, setIdx) => {
+                const canConfirm = (set.reps === '' && set.repsHint !== '') || (set.weight === '' && set.weightHint !== '')
+                return (
+                  <div key={setIdx} className="grid grid-cols-[2rem_1fr_1fr_1.5rem_1.5rem] gap-2 mb-2 items-center">
+                    <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
+                    <input
+                      type="number" inputMode="numeric" min="0"
+                      value={set.reps}
+                      onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
+                      placeholder={set.repsHint || '0'}
+                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                    />
+                    <input
+                      type="number" inputMode="decimal" min="0" step="2.5"
+                      value={set.weight}
+                      onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
+                      placeholder={set.weightHint || '0'}
+                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                    />
+                    <button
+                      onClick={() => confirmSet(exIdx, setIdx)}
+                      title="Accept suggested values"
+                      className={`text-base leading-none ${canConfirm ? 'text-brand-500 hover:text-brand-400' : 'text-gray-600 dark:text-gray-600'}`}
+                    >✓</button>
+                    <button onClick={() => removeSet(exIdx, setIdx)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                  </div>
+                )
+              })}
             </>
           )}
           <button onClick={() => addSet(exIdx)} className="text-brand-600 text-sm hover:underline mt-1">
