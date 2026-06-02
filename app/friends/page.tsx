@@ -7,11 +7,14 @@ import { supabase } from '@/lib/supabase'
 
 type Profile = { id: string; email: string | null; display_name: string | null }
 
-type Friendship = {
+type RawFriendship = {
   id: string
   requester_id: string
   addressee_id: string
   status: string
+}
+
+type Friendship = RawFriendship & {
   requester: Profile | null
   addressee: Profile | null
 }
@@ -24,10 +27,21 @@ function initial(p: Profile | null) {
   return (p?.display_name || p?.email || '?')[0].toUpperCase()
 }
 
+// friendships.requester_id / addressee_id reference auth.users, not profiles, so
+// we can't use a PostgREST embedded join — fetch profiles separately and attach.
+function hydrate(rows: RawFriendship[], profileMap: Record<string, Profile>): Friendship[] {
+  return rows.map((f) => ({
+    ...f,
+    requester: profileMap[f.requester_id] ?? null,
+    addressee: profileMap[f.addressee_id] ?? null,
+  }))
+}
+
 export default function FriendsPage() {
   const router = useRouter()
   const [myId, setMyId] = useState<string | null>(null)
   const [friendships, setFriendships] = useState<Friendship[]>([])
+  const [profileMap, setProfileMap] = useState<Record<string, Profile>>({})
   const [loading, setLoading] = useState(true)
 
   // Search
@@ -40,11 +54,28 @@ export default function FriendsPage() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { router.replace('/login'); return }
       setMyId(user.id)
-      const { data } = await supabase
+
+      const { data: rows } = await supabase
         .from('friendships')
-        .select('*, requester:profiles!requester_id(id, email, display_name), addressee:profiles!addressee_id(id, email, display_name)')
+        .select('id, requester_id, addressee_id, status')
         .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-      setFriendships((data as unknown as Friendship[]) || [])
+
+      const raw = (rows as RawFriendship[]) ?? []
+
+      // Gather every profile we need (both sides of each relationship + self)
+      const ids = new Set<string>([user.id])
+      raw.forEach((f) => { ids.add(f.requester_id); ids.add(f.addressee_id) })
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, email, display_name')
+        .in('id', Array.from(ids))
+
+      const map: Record<string, Profile> = {}
+      ;((profileData as Profile[]) ?? []).forEach((p) => { map[p.id] = p })
+
+      setProfileMap(map)
+      setFriendships(hydrate(raw, map))
       setLoading(false)
     })
   }, [])
@@ -71,16 +102,34 @@ export default function FriendsPage() {
     )
   }
 
-  async function sendRequest(addresseeId: string) {
+  async function sendRequest(addressee: Profile) {
     if (!myId) return
     setSending(true)
-    const { data } = await supabase
+
+    // A prior declined/cancelled row would trip the unique(requester,addressee)
+    // constraint — clear it before re-requesting.
+    const prior = existingRelationship(addressee.id)
+    if (prior) await supabase.from('friendships').delete().eq('id', prior.id)
+
+    const { data, error } = await supabase
       .from('friendships')
-      .insert({ requester_id: myId, addressee_id: addresseeId })
-      .select('*, requester:profiles!requester_id(id, email, display_name), addressee:profiles!addressee_id(id, email, display_name)')
+      .insert({ requester_id: myId, addressee_id: addressee.id })
+      .select('id, requester_id, addressee_id, status')
       .single()
+
+    if (error) {
+      alert('Could not send friend request: ' + error.message)
+      setSending(false)
+      return
+    }
+
     if (data) {
-      setFriendships((prev) => [...prev, data as unknown as Friendship])
+      const nextMap = { ...profileMap, [addressee.id]: addressee }
+      setProfileMap(nextMap)
+      setFriendships((prev) => [
+        ...prev.filter((f) => f.id !== prior?.id),
+        ...hydrate([data as RawFriendship], nextMap),
+      ])
       setSearchResult(null)
       setSearchEmail('')
     }
@@ -88,13 +137,18 @@ export default function FriendsPage() {
   }
 
   async function respond(id: string, accept: boolean) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('friendships')
       .update({ status: accept ? 'accepted' : 'declined' })
       .eq('id', id)
-      .select('*, requester:profiles!requester_id(id, email, display_name), addressee:profiles!addressee_id(id, email, display_name)')
+      .select('id, requester_id, addressee_id, status')
       .single()
-    if (data) setFriendships((prev) => prev.map((f) => (f.id === id ? (data as unknown as Friendship) : f)))
+    if (error) { alert('Error: ' + error.message); return }
+    if (data) {
+      setFriendships((prev) =>
+        prev.map((f) => (f.id === id ? hydrate([data as RawFriendship], profileMap)[0] : f))
+      )
+    }
   }
 
   async function removeFriendship(id: string) {
@@ -172,7 +226,7 @@ export default function FriendsPage() {
                       if (rel) return <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">Request pending</span>
                       return (
                         <button
-                          onClick={() => sendRequest((searchResult as Profile).id)}
+                          onClick={() => sendRequest(searchResult as Profile)}
                           disabled={sending}
                           className="text-xs bg-brand-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-brand-700 disabled:opacity-50 transition-colors shrink-0"
                         >

@@ -77,11 +77,16 @@ export default function PublicProfilePage() {
   async function sendRequest() {
     if (!myId) return
     setActionPending(true)
-    const { data } = await supabase
+
+    // Clear any prior declined row first (unique requester/addressee constraint)
+    if (friendship) await supabase.from('friendships').delete().eq('id', friendship.id)
+
+    const { data, error } = await supabase
       .from('friendships')
       .insert({ requester_id: myId, addressee_id: userId })
       .select()
       .single()
+    if (error) { alert('Could not send friend request: ' + error.message); setActionPending(false); return }
     if (data) setFriendship(data as Friendship)
     setActionPending(false)
   }
@@ -121,7 +126,7 @@ export default function PublicProfilePage() {
   const memberSince = format(new Date(profile.created_at), 'MMM yyyy')
 
   let friendButton: React.ReactNode = null
-  if (!friendship) {
+  if (!friendship || friendship.status === 'declined') {
     friendButton = (
       <button
         onClick={sendRequest}

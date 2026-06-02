@@ -269,9 +269,13 @@ export default function WorkoutSheet({
         return {
           ...e,
           sets: e.sets.map((s, si) => {
-            if (si === setIdx) return { ...s, [field]: value }
-            // cascade to sibling set hints when a value is typed
-            if (value !== '') return { ...s, [`${field}Hint`]: value }
+            if (si === setIdx) {
+              if (s.completed) return s // locked — ignore edits
+              return { ...s, [field]: value }
+            }
+            // cascade to sibling set hints when a value is typed,
+            // but never overwrite a locked (completed) set's values
+            if (value !== '' && !s.completed) return { ...s, [`${field}Hint`]: value }
             return s
           }),
         }
@@ -280,16 +284,29 @@ export default function WorkoutSheet({
   }
 
   function toggleComplete(exIdx: number, setIdx: number) {
+    const wasCompleted = liveExercises[exIdx].sets[setIdx].completed
+
     setLiveExercises((prev) =>
-      prev.map((e, ei) =>
-        ei !== exIdx
-          ? e
-          : { ...e, sets: e.sets.map((s, si) =>
-              si !== setIdx ? s : { ...s, completed: !s.completed }
-            )}
-      )
+      prev.map((e, ei) => {
+        if (ei !== exIdx) return e
+        return {
+          ...e,
+          sets: e.sets.map((s, si) => {
+            if (si !== setIdx) return s
+            if (wasCompleted) return { ...s, completed: false } // unlock, keep values
+            // Lock: bake the effective value (entered OR ghost) into the real field
+            return {
+              ...s,
+              reps: s.reps !== '' ? s.reps : s.repsHint,
+              weight: s.weight !== '' ? s.weight : s.weightHint,
+              completed: true,
+            }
+          }),
+        }
+      })
     )
-    if (!liveExercises[exIdx].sets[setIdx].completed) {
+
+    if (!wasCompleted) {
       saveSet(exIdx, setIdx)
     }
   }
@@ -566,9 +583,10 @@ export default function WorkoutSheet({
                       inputMode="numeric"
                       min="0"
                       value={set.reps}
+                      disabled={set.completed}
                       onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
                       placeholder={set.repsHint || '0'}
-                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                      className={`min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 ${set.completed ? 'opacity-60 cursor-not-allowed' : ''}`}
                     />
                     <input
                       type="number"
@@ -576,9 +594,10 @@ export default function WorkoutSheet({
                       min="0"
                       step="2.5"
                       value={set.weight}
+                      disabled={set.completed}
                       onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
                       placeholder={set.weightHint || '0'}
-                      className="min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                      className={`min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 ${set.completed ? 'opacity-60 cursor-not-allowed' : ''}`}
                     />
                     <button
                       onClick={() => toggleComplete(exIdx, setIdx)}

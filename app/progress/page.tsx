@@ -10,6 +10,7 @@ import {
   Tooltip, ResponsiveContainer,
 } from 'recharts'
 import WorkoutActivity from '@/components/WorkoutActivity'
+import MuscleProgressChart, { MuscleSetEntry } from '@/components/MuscleProgressChart'
 
 const RADAR_PRESETS = [
   { label: '1M', days: 30 },
@@ -43,6 +44,7 @@ export default function ProfilePage() {
   const [calendarWorkouts, setCalendarWorkouts] = useState<CalendarWorkout[]>([])
 
   const [radarMetric, setRadarMetric] = useState<'sets' | 'volume'>('sets')
+  const [radarView, setRadarView] = useState<'radar' | 'trend'>('radar')
   const [radarPreset, setRadarPreset] = useState('3M')
   const [radarFrom, setRadarFrom] = useState(format(subDays(new Date(), 89), 'yyyy-MM-dd'))
   const [radarTo, setRadarTo] = useState(today)
@@ -123,6 +125,19 @@ export default function ProfilePage() {
           : 0,
       }))
   }, [allSets, radarFrom, radarTo, radarPreset, radarMetric])
+
+  // Per-set entries (date-filtered, non-cardio) feeding the over-time trend chart
+  const trendEntries = useMemo<MuscleSetEntry[]>(() => {
+    return allSets.reduce<MuscleSetEntry[]>((acc, s) => {
+      const date = s.workout_log?.date
+      if (!date) return acc
+      if (radarPreset !== 'All' && (date < radarFrom || date > radarTo)) return acc
+      const muscle = s.exercise?.muscle_group || 'Other'
+      if (muscle.toLowerCase() === 'cardio') return acc
+      acc.push({ muscle, date, volume: (s.weight ?? 0) * (s.reps ?? 1) })
+      return acc
+    }, [])
+  }, [allSets, radarFrom, radarTo, radarPreset])
 
   /** Per-date map of unique exercises — passed to the calendar for clickable exercise pills */
   const dayExercises = useMemo(() => {
@@ -220,7 +235,22 @@ export default function ProfilePage() {
 
       {/* Muscle volume radar */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 p-4">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Volume by Muscle Group</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">By Muscle Group</h2>
+          <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+            {(['radar', 'trend'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setRadarView(v)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  radarView === v ? 'bg-brand-600 text-white' : 'text-gray-500 dark:text-gray-400'
+                }`}
+              >
+                {v === 'radar' ? 'Snapshot' : 'Over time'}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="flex gap-2 mb-3">
           {(['sets', 'volume'] as const).map((m) => (
@@ -264,7 +294,7 @@ export default function ProfilePage() {
           <div className="flex items-center justify-center h-52 text-gray-400 dark:text-gray-500 text-sm">
             No workout data yet.
           </div>
-        ) : (
+        ) : radarView === 'radar' ? (
           <ResponsiveContainer width="100%" height={300}>
             <RadarChart data={radarData}>
               <PolarGrid stroke="#374151" />
@@ -280,6 +310,8 @@ export default function ProfilePage() {
               />
             </RadarChart>
           </ResponsiveContainer>
+        ) : (
+          <MuscleProgressChart data={trendEntries} metric={radarMetric} />
         )}
       </div>
 

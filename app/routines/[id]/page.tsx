@@ -10,6 +10,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   Tooltip, ResponsiveContainer,
 } from 'recharts'
+import MuscleProgressChart, { MuscleSetEntry } from '@/components/MuscleProgressChart'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,8 @@ export default function RoutinePage() {
   const [routineName, setRoutineName] = useState('')
   const [routineExercises, setRoutineExercises] = useState<RoutineExerciseView[]>([])
   const [history, setHistory] = useState<WorkoutLogSummary[]>([])
-  const [radarSets, setRadarSets] = useState<{ muscle: string; weight: number; reps: number }[]>([])
+  const [radarSets, setRadarSets] = useState<{ muscle: string; weight: number; reps: number; date: string }[]>([])
+  const [radarView, setRadarView] = useState<'radar' | 'trend'>('radar')
 
   // Edit data
   const [name, setName] = useState('')
@@ -110,14 +112,20 @@ export default function RoutinePage() {
       const logIds = logRows.map((l) => l.id)
       const { data: sets } = await supabase
         .from('sets')
-        .select('weight, reps, exercise:exercises(muscle_group)')
+        .select('weight, reps, exercise:exercises(muscle_group), workout_log:workout_logs(date)')
         .in('workout_log_id', logIds)
-      type SetRow = { weight: number | null; reps: number | null; exercise: { muscle_group: string | null } | null }
+      type SetRow = {
+        weight: number | null
+        reps: number | null
+        exercise: { muscle_group: string | null } | null
+        workout_log: { date: string } | null
+      }
       setRadarSets(
         ((sets || []) as unknown as SetRow[]).map((s) => ({
           muscle: s.exercise?.muscle_group ?? 'Other',
           weight: s.weight ?? 0,
           reps: s.reps ?? 1,
+          date: s.workout_log?.date ?? '',
         }))
       )
     }
@@ -138,6 +146,12 @@ export default function RoutinePage() {
     return Array.from(allMuscles)
       .sort((a, b) => a.localeCompare(b))
       .map((m) => ({ subject: m, sets: byMuscle[m]?.sets ?? 0 }))
+  }, [radarSets])
+
+  const trendEntries = useMemo<MuscleSetEntry[]>(() => {
+    return radarSets
+      .filter((s) => s.date && s.muscle.toLowerCase() !== 'cardio')
+      .map((s) => ({ muscle: s.muscle, date: s.date, volume: s.weight * s.reps }))
   }, [radarSets])
 
   // ── Edit helpers ─────────────────────────────────────────────────────────────
@@ -340,20 +354,43 @@ export default function RoutinePage() {
           {/* Radar chart */}
           {radarData.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-4 p-4">
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-0.5">Muscle Groups</h2>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">Sets per muscle across all sessions</p>
-              <ResponsiveContainer width="100%" height={250}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="#374151" />
-                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                  <PolarRadiusAxis tick={{ fontSize: 9, fill: '#6b7280' }} axisLine={false} tickLine={false} tickCount={4} />
-                  <Radar dataKey="sets" stroke="#ff6e35" fill="#ff6e35" fillOpacity={0.25} strokeWidth={2} />
-                  <Tooltip
-                    contentStyle={{ fontSize: 12, backgroundColor: '#1f2937', border: '1px solid #374151', color: '#f9fafb' }}
-                    formatter={(v: number) => [`${v} sets`, 'Sets']}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
+              <div className="flex items-center justify-between mb-0.5">
+                <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Muscle Groups</h2>
+                <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                  {(['radar', 'trend'] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setRadarView(v)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                        radarView === v ? 'bg-brand-600 text-white' : 'text-gray-500 dark:text-gray-400'
+                      }`}
+                    >
+                      {v === 'radar' ? 'Snapshot' : 'Over time'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+                {radarView === 'radar'
+                  ? 'Sets per muscle across all sessions'
+                  : 'Sets per muscle by month'}
+              </p>
+              {radarView === 'radar' ? (
+                <ResponsiveContainer width="100%" height={250}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="#374151" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                    <PolarRadiusAxis tick={{ fontSize: 9, fill: '#6b7280' }} axisLine={false} tickLine={false} tickCount={4} />
+                    <Radar dataKey="sets" stroke="#ff6e35" fill="#ff6e35" fillOpacity={0.25} strokeWidth={2} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, backgroundColor: '#1f2937', border: '1px solid #374151', color: '#f9fafb' }}
+                      formatter={(v: number) => [`${v} sets`, 'Sets']}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              ) : (
+                <MuscleProgressChart data={trendEntries} metric="sets" />
+              )}
             </div>
           )}
 
