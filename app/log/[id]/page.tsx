@@ -219,11 +219,33 @@ export default function EditWorkout() {
   )
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/history" className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-sm">← History</Link>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Workout</h1>
+    <div className="max-w-2xl mx-auto">
+      {/* Header */}
+      <div className="grid grid-cols-2 items-center w-full">
+        <div className="justify-self-start">
+          <Link
+            href="/history"
+            className="flex items-center gap-2 h-6 px-3 rounded-lg bg-gray-800 border border-gray-500 text-gray-400 dark:text-gray-500 hover:text-gray-300 text-xs shrink-0 transition-colors"
+          >
+            <span>←</span> Discard
+          </Link>
+        </div>
+        <div className="w-full">
+          <div className="flex justify-end">
+            <button
+              onClick={save}
+              disabled={saving || entries.length === 0}
+              className="flex items-center h-6 px-3 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
       </div>
+
+      <h1 className="flex justify-start my-4 text-xl font-bold text-gray-900 dark:text-white">
+        Edit Workout
+      </h1>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-4 space-y-4">
         <div>
@@ -232,7 +254,7 @@ export default function EditWorkout() {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-44 max-w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
         </div>
         <div>

@@ -47,7 +47,7 @@ export default function CardioChart({ data }: { data: CardioPoint[] }) {
       </div>
 
       <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={data} margin={{ top: 5, right: 45, left: 10, bottom: 5 }}>
+        <ComposedChart data={data} margin={{ top: 5, right: 8, left: 8, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
           <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
           {/* Reversed so faster pace (lower seconds) appears higher on the chart */}
@@ -55,12 +55,14 @@ export default function CardioChart({ data }: { data: CardioPoint[] }) {
             yAxisId="pace"
             orientation="left"
             reversed
+            width={44}
             tickFormatter={fmtPace}
             tick={{ fontSize: 10, fill: '#ff6e35' }}
           />
           <YAxis
             yAxisId="distance"
             orientation="right"
+            width={44}
             tick={{ fontSize: 11, fill: '#9ca3af' }}
             tickFormatter={(v: number) => `${v}mi`}
           />

@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Exercise } from '@/lib/types'
+import { getExercisePRs, PR } from '@/lib/prs'
 import { format } from 'date-fns'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -50,6 +51,7 @@ export default function RoutinePage() {
   // View data
   const [routineName, setRoutineName] = useState('')
   const [routineExercises, setRoutineExercises] = useState<RoutineExerciseView[]>([])
+  const [prs, setPrs] = useState<Record<string, PR>>({})
   const [history, setHistory] = useState<WorkoutLogSummary[]>([])
   const [radarSets, setRadarSets] = useState<{ muscle: string; weight: number; reps: number; date: string }[]>([])
   const [radarView, setRadarView] = useState<'radar' | 'trend'>('radar')
@@ -59,6 +61,7 @@ export default function RoutinePage() {
   const [entries, setEntries] = useState<RoutineExerciseEntry[]>([])
   const [saving, setSaving] = useState(false)
   const [justMoved, setJustMoved] = useState<number | null>(null)
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
   const [creatingNew, setCreatingNew] = useState(false)
   const [newExName, setNewExName] = useState('')
   const [newExMuscle, setNewExMuscle] = useState('')
@@ -95,6 +98,9 @@ export default function RoutinePage() {
       default_sets: row.default_sets.toString(),
       default_reps: row.default_reps?.toString() ?? '',
     })))
+
+    // Personal records for this routine's exercises (current user)
+    if (user) setPrs(await getExercisePRs(reRows.map((r) => r.exercise.id), user.id))
 
     // Workout history
     const { data: logs } = await supabase
@@ -175,6 +181,7 @@ export default function RoutinePage() {
   }
 
   function swapExercise(fromIdx: number, toIdx: number) {
+    if (toIdx < 0 || toIdx >= entries.length) return
     setEntries((prev) => {
       if (toIdx < 0 || toIdx >= prev.length) return prev
       const next = [...prev]
@@ -182,6 +189,8 @@ export default function RoutinePage() {
       return next
     })
     setJustMoved(toIdx)
+    // Follow the moved exercise to its new position so it doesn't scroll off-screen
+    setTimeout(() => cardRefs.current[toIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
     setTimeout(() => setJustMoved(null), 700)
   }
 
@@ -328,7 +337,9 @@ export default function RoutinePage() {
               <p className="px-4 py-4 text-sm text-gray-400 dark:text-gray-500">No exercises yet.</p>
             ) : (
               <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                {routineExercises.map((re, i) => (
+                {routineExercises.map((re, i) => {
+                  const pr = prs[re.exercise.id]
+                  return (
                   <div key={re.id} className="flex items-center px-4 py-3 gap-3">
                     <span className="text-xs text-gray-400 dark:text-gray-500 w-5 shrink-0">{i + 1}</span>
                     <Link
@@ -337,6 +348,11 @@ export default function RoutinePage() {
                     >
                       {re.exercise.name}
                     </Link>
+                    {pr && (
+                      <span className="text-xs font-semibold text-brand-600 dark:text-brand-400 shrink-0 tabular-nums" title="Your personal record">
+                        PR {pr.weight} lb
+                      </span>
+                    )}
                     {re.exercise.muscle_group && (
                       <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 hidden sm:block">
                         {re.exercise.muscle_group}
@@ -346,7 +362,8 @@ export default function RoutinePage() {
                       {re.default_sets} × {re.default_reps ?? '?'}
                     </span>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -449,6 +466,7 @@ export default function RoutinePage() {
           {entries.map((entry, idx) => (
             <div
               key={idx}
+              ref={(el) => { cardRefs.current[idx] = el }}
               className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border mb-3 transition-all duration-300 ${
                 justMoved === idx
                   ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300 dark:ring-brand-600'

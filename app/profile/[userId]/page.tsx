@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getPublicPRs, NamedPR } from '@/lib/prs'
 import { format } from 'date-fns'
 
 type ProfileData = { id: string; email: string | null; display_name: string | null; created_at: string }
@@ -18,6 +19,7 @@ export default function PublicProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [friendship, setFriendship] = useState<Friendship | null>(null)
   const [workouts, setWorkouts] = useState<WorkoutCard[]>([])
+  const [prs, setPrs] = useState<NamedPR[]>([])
   const [loading, setLoading] = useState(true)
   const [actionPending, setActionPending] = useState(false)
 
@@ -30,7 +32,7 @@ export default function PublicProfilePage() {
       if (user.id === userId) { router.replace('/progress'); return }
       setMyId(user.id)
 
-      const [{ data: p }, { data: f }, { data: wl }] = await Promise.all([
+      const [{ data: p }, { data: f }, { data: wl }, prList] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
         supabase
           .from('friendships')
@@ -46,10 +48,12 @@ export default function PublicProfilePage() {
           .eq('is_public', true)
           .order('date', { ascending: false })
           .limit(20),
+        getPublicPRs(userId),
       ])
 
       setProfile(p as ProfileData)
       setFriendship(f as Friendship | null)
+      setPrs(prList)
 
       type RawSet = { exercise: { id: string; name: string } | null }
       type RawLog = { id: string; date: string; name: string | null; notes: string | null; sets: RawSet[] }
@@ -203,6 +207,28 @@ export default function PublicProfilePage() {
         </div>
         {friendButton}
       </div>
+
+      {/* Personal records */}
+      {prs.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Personal records</h2>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden divide-y divide-gray-100 dark:divide-gray-700">
+            {prs.slice(0, 8).map((pr) => (
+              <div key={pr.exerciseId} className="flex items-center justify-between px-4 py-2.5">
+                <Link
+                  href={`/exercises/${pr.exerciseId}`}
+                  className="text-sm font-medium text-gray-800 dark:text-gray-100 hover:text-brand-600 dark:hover:text-brand-400 truncate min-w-0 transition-colors"
+                >
+                  {pr.name}
+                </Link>
+                <span className="text-sm font-bold text-brand-600 dark:text-brand-400 shrink-0 ml-3 tabular-nums">
+                  {pr.weight} lb{pr.reps ? ` × ${pr.reps}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Public workouts */}
       <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Recent workouts</h2>

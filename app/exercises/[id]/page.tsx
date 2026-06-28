@@ -479,7 +479,7 @@ export default function ExerciseDetailPage() {
             <div className="grid grid-cols-3 gap-3 mb-2">
               <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
                 <div className="text-xl font-bold text-brand-600">{allTimeMax ?? '—'}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Max weight (lbs)</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">PR (lbs)</div>
               </div>
               <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
                 <div className="text-xl font-bold text-brand-600">{sessionCount}</div>

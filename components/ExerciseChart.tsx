@@ -41,17 +41,19 @@ export default function ExerciseChart({ data }: { data: ChartPoint[] }) {
       </div>
 
       <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={data} margin={{ top: 5, right: 45, left: -15, bottom: 5 }}>
+        <ComposedChart data={data} margin={{ top: 5, right: 8, left: 8, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
           <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
           <YAxis
             yAxisId="weight"
             orientation="left"
+            width={44}
             tick={{ fontSize: 11, fill: '#ff6e35' }}
           />
           <YAxis
             yAxisId="volume"
             orientation="right"
+            width={44}
             tick={{ fontSize: 11, fill: '#9ca3af' }}
             tickFormatter={(v: number) => v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`}
           />

@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Routine, Exercise } from '@/lib/types'
+import { getExercisePR } from '@/lib/prs'
 
 interface SetEntry {
   reps: string
@@ -52,6 +53,7 @@ export default function LogWorkout() {
   const [entries, setEntries] = useState<ExerciseEntry[]>([])
   const [template, setTemplate] = useState<TemplateEntry[]>([])
   const [saving, setSaving] = useState(false)
+  const [userId, setUserId] = useState('')
 
   const [isPublic, setIsPublic] = useState(true)
 
@@ -67,15 +69,48 @@ export default function LogWorkout() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: r }, { data: e }] = await Promise.all([
+      const [{ data: { user } }, { data: r }, { data: e }] = await Promise.all([
+        supabase.auth.getUser(),
         supabase.from('routines').select('*').order('name'),
         supabase.from('exercises').select('*').order('name'),
       ])
+      setUserId(user?.id ?? '')
       setRoutines(r || [])
       setExercises(e || [])
     }
     load()
   }, [])
+
+  // Suggested values for an exercise, scoped to the current user: PR weight/reps
+  // for strength, most recent session for cardio.
+  async function fetchHints(exerciseId: string, uid: string) {
+    if (!uid) return { repsHint: '', weightHint: '', durationHint: '', distanceHint: '' }
+    if (isCardioExercise(exerciseId)) {
+      const { data } = await supabase
+        .from('sets')
+        .select('duration_seconds, distance_miles, workout_logs!inner(user_id)')
+        .eq('exercise_id', exerciseId)
+        .eq('workout_logs.user_id', uid)
+        .not('duration_seconds', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const r = data as unknown as { duration_seconds: number | null; distance_miles: number | null } | null
+      return {
+        repsHint: '',
+        weightHint: '',
+        durationHint: r?.duration_seconds != null ? (r.duration_seconds / 60).toString() : '',
+        distanceHint: r?.distance_miles?.toString() ?? '',
+      }
+    }
+    const pr = await getExercisePR(exerciseId, uid)
+    return {
+      repsHint: pr?.reps?.toString() ?? '',
+      weightHint: pr?.weight?.toString() ?? '',
+      durationHint: '',
+      distanceHint: '',
+    }
+  }
 
   async function onRoutineChange(id: string) {
     setRoutineId(id)
@@ -96,32 +131,22 @@ export default function LogWorkout() {
   }
 
   async function applyTemplate(tmpl: TemplateEntry[]) {
-    const lastSets = await Promise.all(
-      tmpl.map((t) =>
-        supabase
-          .from('sets')
-          .select('reps, weight, duration_seconds, distance_miles')
-          .eq('exercise_id', t.exercise_id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      )
-    )
+    const hints = await Promise.all(tmpl.map((t) => fetchHints(t.exercise_id, userId)))
 
     setEntries(
       tmpl.map((t, i) => {
-        const last = lastSets[i].data as { reps: number | null; weight: number | null; duration_seconds: number | null; distance_miles: number | null } | null
+        const h = hints[i]
         return {
           exercise_id: t.exercise_id,
           sets: Array.from({ length: t.default_sets }, () => ({
             reps: '',
             weight: '',
-            repsHint: (t.default_reps ?? last?.reps)?.toString() ?? '',
-            weightHint: last?.weight?.toString() ?? '',
+            repsHint: t.default_reps != null ? t.default_reps.toString() : h.repsHint,
+            weightHint: h.weightHint,
             duration: '',
             distance: '',
-            durationHint: last?.duration_seconds != null ? (last.duration_seconds / 60).toString() : '',
-            distanceHint: last?.distance_miles?.toString() ?? '',
+            durationHint: h.durationHint,
+            distanceHint: h.distanceHint,
           })),
           notes: '',
         }
@@ -138,6 +163,7 @@ export default function LogWorkout() {
   }
 
   const [justMoved, setJustMoved] = useState<number | null>(null)
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
   function swapExercise(exIdx: number, targetIdx: number) {
     if (targetIdx === exIdx) return
@@ -147,6 +173,8 @@ export default function LogWorkout() {
       return next
     })
     setJustMoved(targetIdx)
+    // Follow the moved exercise to its new position so it doesn't scroll off-screen
+    setTimeout(() => cardRefs.current[targetIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
     setTimeout(() => setJustMoved(null), 700)
   }
 
@@ -182,9 +210,27 @@ export default function LogWorkout() {
     })
   }
 
-  function updateExerciseId(exIdx: number, value: string) {
+  async function updateExerciseId(exIdx: number, value: string) {
     setEntries((prev) =>
       prev.map((entry, i) => (i !== exIdx ? entry : { ...entry, exercise_id: value }))
+    )
+    if (!value) return
+    // Pull this user's PR (or recent cardio) so suggested values match their history
+    const h = await fetchHints(value, userId)
+    setEntries((prev) =>
+      prev.map((entry, i) => {
+        if (i !== exIdx) return entry
+        return {
+          ...entry,
+          sets: entry.sets.map((s) => ({
+            ...s,
+            repsHint: h.repsHint,
+            weightHint: h.weightHint,
+            durationHint: h.durationHint,
+            distanceHint: h.distanceHint,
+          })),
+        }
+      })
     )
   }
 
@@ -345,7 +391,7 @@ export default function LogWorkout() {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-44 max-w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
         </div>
         <div>
@@ -399,7 +445,7 @@ export default function LogWorkout() {
       </div>
 
       {entries.map((entry, exIdx) => (
-        <div key={exIdx} className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border mb-4 transition-all duration-300 ${justMoved === exIdx ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300 dark:ring-brand-600' : 'border-gray-100 dark:border-gray-700'}`}>
+        <div key={exIdx} ref={(el) => { cardRefs.current[exIdx] = el }} className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border mb-4 transition-all duration-300 ${justMoved === exIdx ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300 dark:ring-brand-600' : 'border-gray-100 dark:border-gray-700'}`}>
           <div className="flex gap-2 mb-1 items-center">
             {entries.length > 1 && (
               <select
