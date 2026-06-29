@@ -3,9 +3,25 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { format, startOfWeek } from 'date-fns'
+import { format, startOfWeek, subWeeks } from 'date-fns'
 
 type Profile = { id: string; display_name: string | null; email: string | null }
+
+// Consecutive weeks (most recent backward) with at least one logged workout.
+// The current week not being logged yet doesn't break the streak — it only
+// breaks once a fully-elapsed week passes with no workout.
+function computeWeekStreak(dates: string[]): number {
+  if (dates.length === 0) return 0
+  const weeks = new Set(dates.map((d) => format(startOfWeek(new Date(d + 'T00:00:00')), 'yyyy-MM-dd')))
+  let cursor = startOfWeek(new Date())
+  if (!weeks.has(format(cursor, 'yyyy-MM-dd'))) cursor = subWeeks(cursor, 1)
+  let streak = 0
+  while (weeks.has(format(cursor, 'yyyy-MM-dd'))) {
+    streak++
+    cursor = subWeeks(cursor, 1)
+  }
+  return streak
+}
 
 type FeedWorkout = {
   id: string
@@ -34,6 +50,7 @@ export default function FeedPage() {
   const [myId, setMyId] = useState<string | null>(null)
   const [myInitial, setMyInitial] = useState('?')
   const [weekCount, setWeekCount] = useState(0)
+  const [streak, setStreak] = useState(0)
   const [feedWorkouts, setFeedWorkouts] = useState<FeedWorkout[]>([])
   const [profiles, setProfiles] = useState<Record<string, Profile>>({})
   const [loading, setLoading] = useState(true)
@@ -63,7 +80,7 @@ export default function FeedPage() {
       // Fetch own + friends' workouts in parallel
       const FIELDS = 'id, date, name, notes, is_public, user_id, routine:routines(name), sets(exercise:exercises(id, name))'
 
-      const [{ data: ownData }, friendResult, { count }] = await Promise.all([
+      const [{ data: ownData }, friendResult, { count }, { data: allDates }] = await Promise.all([
         supabase
           .from('workout_logs')
           .select(FIELDS)
@@ -84,9 +101,14 @@ export default function FeedPage() {
           .select('id', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .gte('date', weekStart),
+        supabase
+          .from('workout_logs')
+          .select('date')
+          .eq('user_id', user.id),
       ])
 
       setWeekCount(count ?? 0)
+      setStreak(computeWeekStreak(((allDates as { date: string }[] | null) ?? []).map((d) => d.date)))
 
       const all = [
         ...((ownData as unknown as FeedWorkout[]) ?? []),
@@ -132,19 +154,28 @@ export default function FeedPage() {
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Feed</h1>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
+          <div className="text-4xl font-bold text-brand-500">{streak}{streak > 0 && ' 🔥'}</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Week streak
+            <span className="block text-xs text-gray-400 dark:text-gray-500">
+              {streak === 0 ? 'Log a workout this week to start one' : `${streak} week${streak === 1 ? '' : 's'} in a row`}
+            </span>
+          </div>
+        </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
           <div className="text-4xl font-bold text-brand-500">{weekCount}</div>
           <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Workouts this week</div>
         </div>
-        <Link
-          href="/workout"
-          className="bg-brand-700 rounded-xl p-5 shadow-sm flex flex-col items-center justify-center text-white hover:bg-brand-600 transition-colors"
-        >
-          <span className="text-3xl">💪</span>
-          <span className="text-sm font-semibold mt-1">Start Workout</span>
-        </Link>
       </div>
+      <Link
+        href="/workout"
+        className="bg-brand-700 rounded-xl p-4 shadow-sm flex items-center justify-center gap-2 text-white hover:bg-brand-600 transition-colors mb-6"
+      >
+        <span className="text-xl">💪</span>
+        <span className="text-sm font-semibold">Start Workout</span>
+      </Link>
 
       {/* Feed */}
       {loading ? (

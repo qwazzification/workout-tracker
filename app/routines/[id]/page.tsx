@@ -189,8 +189,11 @@ export default function RoutinePage() {
       return next
     })
     setJustMoved(toIdx)
-    // Follow the moved exercise to its new position so it doesn't scroll off-screen
-    setTimeout(() => cardRefs.current[toIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    // Blur the native <select> so the browser's focus-scroll doesn't fight ours,
+    // then follow the moved card. The delay lets the mobile picker finish closing
+    // and the reordered DOM commit before we scroll.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    setTimeout(() => cardRefs.current[toIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120)
     setTimeout(() => setJustMoved(null), 700)
   }
 

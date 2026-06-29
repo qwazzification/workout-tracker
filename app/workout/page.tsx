@@ -12,6 +12,10 @@ type RoutineExerciseRow = RoutineExercise & { exercise: Exercise }
 
 const cardClass = 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700'
 
+// Remembers whether the full-screen sheet was open, so navigating to an
+// exercise page and back restores it instead of dropping to the routine list.
+const SHEET_OPEN_KEY = 'workoutSheetOpen'
+
 export default function WorkoutPage() {
   const router = useRouter()
   const [userId, setUserId] = useState('')
@@ -55,8 +59,12 @@ export default function WorkoutPage() {
           .from('workout_logs').select('id').eq('id', savedId).maybeSingle()
         if (check) {
           setActiveWorkoutId(savedId)
+          // Re-open the sheet if it was open when we navigated away (e.g. tapped
+          // an exercise link), so Back returns to the workout, not this list.
+          if (localStorage.getItem(SHEET_OPEN_KEY) === '1') setSheetOpen(true)
         } else {
           localStorage.removeItem('activeWorkoutId')
+          localStorage.removeItem(SHEET_OPEN_KEY)
         }
       }
 
@@ -64,6 +72,16 @@ export default function WorkoutPage() {
     }
     load()
   }, [])
+
+  function openSheet() {
+    setSheetOpen(true)
+    localStorage.setItem(SHEET_OPEN_KEY, '1')
+  }
+
+  function closeSheet() {
+    setSheetOpen(false)
+    localStorage.removeItem(SHEET_OPEN_KEY)
+  }
 
   async function startWorkout(routineId?: string) {
     if (activeWorkoutId) return
@@ -76,14 +94,14 @@ export default function WorkoutPage() {
     if (!data) return
     localStorage.setItem('activeWorkoutId', data.id)
     setActiveWorkoutId(data.id)
-    setSheetOpen(true)
+    openSheet()
   }
 
   function onWorkoutFinished() {
     const id = activeWorkoutId
     localStorage.removeItem('activeWorkoutId')
     setActiveWorkoutId(null)
-    setSheetOpen(false)
+    closeSheet()
     if (id) router.push('/workouts/' + id)
   }
 
@@ -92,7 +110,7 @@ export default function WorkoutPage() {
     await supabase.from('workout_logs').delete().eq('id', activeWorkoutId)
     localStorage.removeItem('activeWorkoutId')
     setActiveWorkoutId(null)
-    setSheetOpen(false)
+    closeSheet()
   }
 
   async function deleteRoutine(id: string) {
@@ -116,7 +134,7 @@ export default function WorkoutPage() {
             <div className="text-xs text-brand-600 dark:text-brand-400 mt-0.5">Your sets are saved — tap to continue</div>
           </div>
           <button
-            onClick={() => setSheetOpen(true)}
+            onClick={openSheet}
             className="shrink-0 bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700"
           >
             Resume
@@ -243,7 +261,7 @@ export default function WorkoutPage() {
           workoutId={activeWorkoutId}
           userId={userId}
           allExercises={exercises}
-          onClose={() => setSheetOpen(false)}
+          onClose={closeSheet}
           onFinish={onWorkoutFinished}
           onDiscard={onWorkoutDiscarded}
           onExerciseCreated={(ex) =>

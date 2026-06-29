@@ -173,8 +173,11 @@ export default function LogWorkout() {
       return next
     })
     setJustMoved(targetIdx)
-    // Follow the moved exercise to its new position so it doesn't scroll off-screen
-    setTimeout(() => cardRefs.current[targetIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    // Blur the native <select> so the browser's focus-scroll doesn't fight ours,
+    // then follow the moved card. The delay lets the mobile picker finish closing
+    // and the reordered DOM commit before we scroll.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    setTimeout(() => cardRefs.current[targetIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120)
     setTimeout(() => setJustMoved(null), 700)
   }
 
@@ -474,6 +477,15 @@ export default function LogWorkout() {
               className="text-red-400 hover:text-red-600 px-2 text-lg leading-none shrink-0"
             >×</button>
           </div>
+
+          {entry.exercise_id && (
+            <Link
+              href={`/exercises/${entry.exercise_id}`}
+              className="inline-block text-xs text-brand-600 dark:text-brand-400 hover:underline mb-2 pl-1"
+            >
+              View {exercises.find((e) => e.id === entry.exercise_id)?.name} →
+            </Link>
+          )}
 
           {creatingForIdx === exIdx ? (
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 mb-3 space-y-2">

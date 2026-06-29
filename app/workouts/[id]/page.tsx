@@ -471,16 +471,23 @@ export default function WorkoutDetailPage() {
                 Delete workout
               </button>
             </div> 
-          ) : ( 
-            <div className="flex justify-end">
-              <button 
-                onClick={() => { setMode('view'); loadData() }} 
-                className="flex items-center text-sm h-10 px-4 rounded-lg border border-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-red-400 dark:text-red-500 shrink-0 transition-colors" 
-              > 
-                Cancel 
-              </button> 
+          ) : (
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={saveEdits}
+                disabled={saving || entries.length === 0}
+                className="flex items-center text-xs font-semibold h-6 px-3 rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 transition-colors"
+              >
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+              <button
+                onClick={() => { setMode('view'); loadData() }}
+                className="flex items-center text-xs h-6 px-3 rounded-lg border border-gray-500 text-red-400 dark:text-red-500 hover:text-red-300 shrink-0 transition-colors"
+              >
+                Cancel
+              </button>
             </div>
-          )} 
+          )}
         </div> 
       </div>
 
@@ -605,7 +612,7 @@ export default function WorkoutDetailPage() {
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm w-44 max-w-full focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
             <div>

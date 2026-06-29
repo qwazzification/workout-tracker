@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Exercise } from '@/lib/types'
+import { getExercisePR } from '@/lib/prs'
 import { format } from 'date-fns'
 
 interface LiveSet {
@@ -11,7 +13,24 @@ interface LiveSet {
   weight: string
   repsHint: string
   weightHint: string
+  duration: string       // minutes (decimal) — cardio
+  distance: string       // miles — cardio
+  durationHint: string
+  distanceHint: string
   completed: boolean
+}
+
+function parseDurationToSeconds(minutesStr: string): number | null {
+  const val = parseFloat(minutesStr)
+  if (isNaN(val) || val < 0) return null
+  return Math.round(val * 60)
+}
+
+// A blank set with every field present (so restored/older state never yields
+// `undefined` controlled inputs).
+const EMPTY_SET: LiveSet = {
+  dbId: null, reps: '', weight: '', repsHint: '', weightHint: '',
+  duration: '', distance: '', durationHint: '', distanceHint: '', completed: false,
 }
 
 interface LiveExercise {
@@ -65,6 +84,41 @@ export default function WorkoutSheet({
   const [newExName, setNewExName] = useState('')
   const [newExMuscle, setNewExMuscle] = useState('')
 
+  function isCardio(exerciseId: string): boolean {
+    return allExercises.find((e) => e.id === exerciseId)?.muscle_group?.trim().toLowerCase() === 'cardio'
+  }
+
+  // Suggested values scoped to the current user: PR weight/reps for strength,
+  // most recent session for cardio.
+  async function fetchHints(exerciseId: string, uid: string) {
+    if (!uid) return { repsHint: '', weightHint: '', durationHint: '', distanceHint: '' }
+    if (isCardio(exerciseId)) {
+      const { data } = await supabase
+        .from('sets')
+        .select('duration_seconds, distance_miles, workout_logs!inner(user_id)')
+        .eq('exercise_id', exerciseId)
+        .eq('workout_logs.user_id', uid)
+        .not('duration_seconds', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const r = data as unknown as { duration_seconds: number | null; distance_miles: number | null } | null
+      return {
+        repsHint: '',
+        weightHint: '',
+        durationHint: r?.duration_seconds != null ? (r.duration_seconds / 60).toString() : '',
+        distanceHint: r?.distance_miles?.toString() ?? '',
+      }
+    }
+    const pr = await getExercisePR(exerciseId, uid)
+    return {
+      repsHint: pr?.reps?.toString() ?? '',
+      weightHint: pr?.weight?.toString() ?? '',
+      durationHint: '',
+      distanceHint: '',
+    }
+  }
+
   useEffect(() => {
     if (!workoutId) return
     loadWorkout()
@@ -113,7 +167,9 @@ export default function WorkoutSheet({
     const savedState = localStorage.getItem(`workout-state-${workoutId}`)
     if (savedState) {
       try {
-        setLiveExercises(JSON.parse(savedState))
+        const parsed = JSON.parse(savedState) as LiveExercise[]
+        // Backfill cardio fields for state saved before cardio support existed.
+        setLiveExercises(parsed.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...EMPTY_SET, ...s })) })))
         setLoading(false)
         return
       } catch {
@@ -126,7 +182,7 @@ export default function WorkoutSheet({
     const [{ data: rawSets }, { data: rawNotes }] = await Promise.all([
       supabase
         .from('sets')
-        .select('id, exercise_id, set_number, reps, weight, exercise:exercises(name)')
+        .select('id, exercise_id, set_number, reps, weight, duration_seconds, distance_miles, exercise:exercises(name)')
         .eq('workout_log_id', workoutId)
         .order('set_number'),
       supabase
@@ -146,6 +202,8 @@ export default function WorkoutSheet({
       set_number: number
       reps: number | null
       weight: number | null
+      duration_seconds: number | null
+      distance_miles: number | null
       exercise: { name: string } | null
     }[]
 
@@ -169,6 +227,10 @@ export default function WorkoutSheet({
           weight: s.weight?.toString() ?? '',
           repsHint: '',
           weightHint: '',
+          duration: s.duration_seconds != null ? (s.duration_seconds / 60).toString() : '',
+          distance: s.distance_miles?.toString() ?? '',
+          durationHint: '',
+          distanceHint: '',
           completed: true,
         })
       })
@@ -189,21 +251,13 @@ export default function WorkoutSheet({
       }[]
 
       if (rex.length > 0) {
-        const lastSets = await Promise.all(
-          rex.map((re) =>
-            supabase
-              .from('sets')
-              .select('reps, weight')
-              .eq('exercise_id', re.exercise_id)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-          )
-        )
+        // Suggested values scoped to this user (PR for strength, recent for
+        // cardio) — never other users' data.
+        const hints = await Promise.all(rex.map((re) => fetchHints(re.exercise_id, userId)))
 
         setLiveExercises(
           rex.map((re, i) => {
-            const last = lastSets[i].data
+            const h = hints[i]
             return {
               exerciseId: re.exercise_id,
               name: re.exercise?.name ?? 'Unknown',
@@ -212,8 +266,12 @@ export default function WorkoutSheet({
                 dbId: null,
                 reps: '',
                 weight: '',
-                repsHint: (re.default_reps ?? last?.reps)?.toString() ?? '',
-                weightHint: last?.weight?.toString() ?? '',
+                repsHint: re.default_reps != null ? re.default_reps.toString() : h.repsHint,
+                weightHint: h.weightHint,
+                duration: '',
+                distance: '',
+                durationHint: h.durationHint,
+                distanceHint: h.distanceHint,
                 completed: false,
               })),
             }
@@ -228,11 +286,14 @@ export default function WorkoutSheet({
   async function saveSet(exIdx: number, setIdx: number) {
     const entry = liveExercises[exIdx]
     const set = entry.sets[setIdx]
-    const reps = set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null)
-    const weight = set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null)
+    const cardio = isCardio(entry.exerciseId)
+    const reps = cardio ? null : (set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null))
+    const weight = cardio ? null : (set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null))
+    const duration_seconds = cardio ? parseDurationToSeconds(set.duration !== '' ? set.duration : set.durationHint) : null
+    const distance_miles = cardio ? (parseFloat(set.distance !== '' ? set.distance : set.distanceHint) || null) : null
 
     if (set.dbId) {
-      await supabase.from('sets').update({ reps, weight }).eq('id', set.dbId)
+      await supabase.from('sets').update({ reps, weight, duration_seconds, distance_miles }).eq('id', set.dbId)
     } else {
       const { data } = await supabase
         .from('sets')
@@ -242,6 +303,8 @@ export default function WorkoutSheet({
           set_number: setIdx + 1,
           reps,
           weight,
+          duration_seconds,
+          distance_miles,
         })
         .select('id')
         .single()
@@ -262,7 +325,7 @@ export default function WorkoutSheet({
     }
   }
 
-  function updateSetField(exIdx: number, setIdx: number, field: 'reps' | 'weight', value: string) {
+  function updateSetField(exIdx: number, setIdx: number, field: 'reps' | 'weight' | 'duration' | 'distance', value: string) {
     setLiveExercises((prev) =>
       prev.map((e, ei) => {
         if (ei !== exIdx) return e
@@ -299,6 +362,8 @@ export default function WorkoutSheet({
               ...s,
               reps: s.reps !== '' ? s.reps : s.repsHint,
               weight: s.weight !== '' ? s.weight : s.weightHint,
+              duration: s.duration !== '' ? s.duration : s.durationHint,
+              distance: s.distance !== '' ? s.distance : s.distanceHint,
               completed: true,
             }
           }),
@@ -326,6 +391,10 @@ export default function WorkoutSheet({
               weight: '',
               repsHint: last?.repsHint || last?.reps || '',
               weightHint: last?.weightHint || last?.weight || '',
+              duration: '',
+              distance: '',
+              durationHint: last?.durationHint || last?.duration || '',
+              distanceHint: last?.distanceHint || last?.distance || '',
               completed: false,
             },
           ],
@@ -359,8 +428,24 @@ export default function WorkoutSheet({
   }
 
   const [justMoved, setJustMoved] = useState<number | null>(null)
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  // Manually center a card within the sheet's own scroll container. scrollIntoView
+  // is unreliable inside a nested scroll container on mobile, so compute it.
+  function scrollToCard(idx: number) {
+    const card = cardRefs.current[idx]
+    const container = scrollRef.current
+    if (!card || !container) return
+    const cardRect = card.getBoundingClientRect()
+    const contRect = container.getBoundingClientRect()
+    const target =
+      container.scrollTop + (cardRect.top - contRect.top) - (container.clientHeight - cardRect.height) / 2
+    container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+  }
 
   function swapExercise(fromIdx: number, toIdx: number) {
+    if (toIdx < 0 || toIdx >= liveExercises.length) return
     setLiveExercises((prev) => {
       if (toIdx < 0 || toIdx >= prev.length) return prev
       const next = [...prev]
@@ -368,6 +453,11 @@ export default function WorkoutSheet({
       return next
     })
     setJustMoved(toIdx)
+    // Drop focus from the native <select> so the browser's own focus-scroll
+    // doesn't fight ours, then center the moved card. The delay lets the mobile
+    // picker finish closing and the DOM commit before we measure/scroll.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    setTimeout(() => scrollToCard(toIdx), 120)
     setTimeout(() => setJustMoved(null), 700)
   }
 
@@ -401,15 +491,22 @@ export default function WorkoutSheet({
       .eq('id', workoutId)
   }
 
-  function handleAddExercise() {
+  async function handleAddExercise() {
     if (!addExId) return
     const ex = allExercises.find((e) => e.id === addExId)
     if (!ex) return
+    setAddExId('')
+    // Prefill suggested values from this user's history (PR / recent cardio).
+    const h = await fetchHints(ex.id, userId)
     setLiveExercises((prev) => [
       ...prev,
-      { exerciseId: ex.id, name: ex.name, notes: '', sets: [{ dbId: null, reps: '', weight: '', repsHint: '', weightHint: '', completed: false }] },
+      {
+        exerciseId: ex.id,
+        name: ex.name,
+        notes: '',
+        sets: [{ ...EMPTY_SET, ...h }],
+      },
     ])
-    setAddExId('')
   }
 
   async function handleCreateExercise() {
@@ -424,7 +521,7 @@ export default function WorkoutSheet({
       onExerciseCreated(data as Exercise)
       setLiveExercises((prev) => [
         ...prev,
-        { exerciseId: data.id, name: data.name, notes: '', sets: [{ dbId: null, reps: '', weight: '', repsHint: '', weightHint: '', completed: false }] },
+        { exerciseId: data.id, name: data.name, notes: '', sets: [{ ...EMPTY_SET }] },
       ])
       setCreatingNew(false)
       setNewExName('')
@@ -451,11 +548,14 @@ export default function WorkoutSheet({
     // Flush any unsaved sets, using hint as fallback for untyped fields
     const inserts: PromiseLike<unknown>[] = []
     liveExercises.forEach((entry) => {
+      const cardio = isCardio(entry.exerciseId)
       entry.sets.forEach((set, setIdx) => {
         if (set.dbId !== null) return
-        const reps = set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null)
-        const weight = set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null)
-        if (reps === null && weight === null) return
+        const reps = cardio ? null : (set.reps !== '' ? parseInt(set.reps) : (set.repsHint !== '' ? parseInt(set.repsHint) : null))
+        const weight = cardio ? null : (set.weight !== '' ? parseFloat(set.weight) : (set.weightHint !== '' ? parseFloat(set.weightHint) : null))
+        const duration_seconds = cardio ? parseDurationToSeconds(set.duration !== '' ? set.duration : set.durationHint) : null
+        const distance_miles = cardio ? (parseFloat(set.distance !== '' ? set.distance : set.distanceHint) || null) : null
+        if (cardio ? (duration_seconds === null && distance_miles === null) : (reps === null && weight === null)) return
         inserts.push(
           supabase.from('sets').insert({
             workout_log_id: workoutId,
@@ -463,6 +563,8 @@ export default function WorkoutSheet({
             set_number: setIdx + 1,
             reps,
             weight,
+            duration_seconds,
+            distance_miles,
           })
         )
       })
@@ -524,7 +626,7 @@ export default function WorkoutSheet({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
             Loading...
@@ -542,13 +644,19 @@ export default function WorkoutSheet({
             />
 
             {/* Exercise cards */}
-            {liveExercises.map((entry, exIdx) => (
+            {liveExercises.map((entry, exIdx) => {
+              const cardio = isCardio(entry.exerciseId)
+              return (
               <div
                 key={`${entry.exerciseId}-${exIdx}`}
+                ref={(el) => { cardRefs.current[exIdx] = el }}
                 className={`bg-gray-50 dark:bg-gray-800 rounded-xl p-4 border transition-all duration-300 ${justMoved === exIdx ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300 dark:ring-brand-600' : 'border-gray-100 dark:border-gray-700'}`}
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="flex-1 font-semibold text-gray-900 dark:text-white text-sm">{entry.name}</span>
+                  <Link
+                    href={`/exercises/${entry.exerciseId}`}
+                    className="flex-1 min-w-0 font-semibold text-gray-900 dark:text-white text-sm hover:text-brand-600 dark:hover:text-brand-400 transition-colors truncate"
+                  >{entry.name}</Link>
                   {liveExercises.length > 1 && (
                     <select
                       value={exIdx + 1}
@@ -567,8 +675,8 @@ export default function WorkoutSheet({
 
                 <div className="grid grid-cols-[2rem_1fr_1fr_2.5rem_2rem] gap-2 mb-2 px-1">
                   <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Set</span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Reps</span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">lbs</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{cardio ? 'Duration (min)' : 'Reps'}</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{cardio ? 'Distance (mi)' : 'lbs'}</span>
                   <span />
                   <span />
                 </div>
@@ -580,23 +688,24 @@ export default function WorkoutSheet({
                     <span className="text-sm text-gray-500 dark:text-gray-400 font-medium pl-1">{setIdx + 1}</span>
                     <input
                       type="number"
-                      inputMode="numeric"
+                      inputMode={cardio ? 'decimal' : 'numeric'}
                       min="0"
-                      value={set.reps}
+                      step={cardio ? '0.5' : undefined}
+                      value={cardio ? set.duration : set.reps}
                       disabled={set.completed}
-                      onChange={(e) => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
-                      placeholder={set.repsHint || '0'}
+                      onChange={(e) => updateSetField(exIdx, setIdx, cardio ? 'duration' : 'reps', e.target.value)}
+                      placeholder={(cardio ? set.durationHint : set.repsHint) || '0'}
                       className={`min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 ${set.completed ? 'opacity-60 cursor-not-allowed' : ''}`}
                     />
                     <input
                       type="number"
                       inputMode="decimal"
                       min="0"
-                      step="2.5"
-                      value={set.weight}
+                      step={cardio ? '0.1' : '2.5'}
+                      value={cardio ? set.distance : set.weight}
                       disabled={set.completed}
-                      onChange={(e) => updateSetField(exIdx, setIdx, 'weight', e.target.value)}
-                      placeholder={set.weightHint || '0'}
+                      onChange={(e) => updateSetField(exIdx, setIdx, cardio ? 'distance' : 'weight', e.target.value)}
+                      placeholder={(cardio ? set.distanceHint : set.weightHint) || '0'}
                       className={`min-w-0 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 ${set.completed ? 'opacity-60 cursor-not-allowed' : ''}`}
                     />
                     <button
@@ -629,7 +738,8 @@ export default function WorkoutSheet({
                   className="mt-3 w-full text-xs border-0 border-b border-gray-200 dark:border-gray-700 focus:border-brand-400 bg-transparent py-1 focus:outline-none text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600"
                 />
               </div>
-            ))}
+              )
+            })}
 
             {/* Add exercise */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border-2 border-dashed border-gray-200 dark:border-gray-700 space-y-2">
